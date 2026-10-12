@@ -80,6 +80,10 @@ export const workflows = sqliteTable("workflows", {
   tagsTemplate: text().notNull().default(""),
   useAi: integer({ mode: "boolean" }).notNull().default(false),
   aiContext: text().notNull().default(""),
+  /** Transcribe the audio (Gemini) and give it to the AI when naming. */
+  useTranscript: integer({ mode: "boolean" }).notNull().default(false),
+  /** Append YouTube chapters (from the transcript) to the description. */
+  addChapters: integer({ mode: "boolean" }).notNull().default(false),
   privacyStatus: text({ enum: PRIVACY_STATUSES }).notNull().default("private"),
   categoryId: text().notNull().default("22"),
   playlistId: text(),
@@ -145,6 +149,8 @@ export const videos = sqliteTable(
     title: text(),
     description: text(),
     tags: text({ mode: "json" }).$type<string[]>(),
+    /** Audio transcript with `[h:mm:ss]` marks. */
+    transcript: text(),
     privacyStatus: text({ enum: PRIVACY_STATUSES }),
     publishAt: integer({ mode: "timestamp_ms" }),
     titleSource: text({ enum: TITLE_SOURCES }),
@@ -167,6 +173,7 @@ export const videos = sqliteTable(
 export const JOB_TYPES = [
   "scan_workflow",
   "generate_metadata",
+  "transcribe_video",
   "transfer_video",
   "check_processing",
   "sync_metadata",

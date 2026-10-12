@@ -34,6 +34,8 @@ export type WorkflowFormValues = FilterFormValues & {
   descriptionTemplate: string;
   tagsTemplate: string;
   useAi: boolean;
+  useTranscript: boolean;
+  addChapters: boolean;
   aiContext: string;
   privacyStatus: PrivacyStatus;
   categoryId: string;
@@ -60,6 +62,7 @@ export function WorkflowForm({
   onedriveAccounts,
   youtubeAccounts,
   aiAvailable,
+  transcriptionUnavailable,
   timeZone,
 }: {
   workflowId: number | null;
@@ -67,6 +70,8 @@ export function WorkflowForm({
   onedriveAccounts: AccountOption[];
   youtubeAccounts: AccountOption[];
   aiAvailable: boolean;
+  /** Why transcription can't be used, or null when it can. */
+  transcriptionUnavailable: string | null;
   timeZone: string;
 }) {
   const [values, setValues] = useState(initial);
@@ -157,6 +162,8 @@ export function WorkflowForm({
           "skipDuplicates",
           "madeForKids",
           "useAi",
+          "useTranscript",
+          "addChapters",
         ] as const
       ).map((key) => (
         <input key={key} type="hidden" name={key} value={String(values[key] ?? "")} />
@@ -467,6 +474,23 @@ export function WorkflowForm({
               </Field>
             )}
             {!values.useAi && <input type="hidden" name="aiContext" value={values.aiContext} />}
+            <SwitchField
+              label="Usar la transcripción del audio"
+              checked={values.useTranscript}
+              onChange={(v) => setValues((s) => ({ ...s, useTranscript: v, addChapters: v && s.addChapters }))}
+              disabled={transcriptionUnavailable !== null && !values.useTranscript}
+              hint={
+                transcriptionUnavailable ??
+                "Antes de nombrar, Gemini transcribe el audio (aunque los títulos los haga Claude) y la IA lo usa como fuente principal. En la capa gratuita, Google usa ese audio para mejorar sus productos."
+              }
+            />
+            <SwitchField
+              label="Agregar capítulos a la descripción"
+              checked={values.addChapters}
+              onChange={(v) => set("addChapters", v)}
+              disabled={!values.useTranscript || !values.useAi}
+              hint="La IA marca las partes del video con las marcas de tiempo de la transcripción (necesita la IA y la transcripción activadas)."
+            />
           </div>
           <div className="space-y-3 rounded-lg border bg-muted/40 p-4">
             <Field label="Archivo de ejemplo" htmlFor="sampleName">

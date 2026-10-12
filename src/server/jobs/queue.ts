@@ -5,6 +5,7 @@ import { jobs, type Job, type JobType } from "../db/schema";
 export type JobPayloads = {
   scan_workflow: { workflowId: number };
   generate_metadata: { videoId: number };
+  transcribe_video: { videoId: number };
   transfer_video: { videoId: number };
   check_processing: { videoId: number; checks?: number };
   sync_metadata: { videoId: number };

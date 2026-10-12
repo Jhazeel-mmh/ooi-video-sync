@@ -1,7 +1,7 @@
 import "./load-env";
 import { hostname } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { Job } from "../server/db/schema";
+import { JOB_TYPES, type Job } from "../server/db/schema";
 import { getDb } from "../server/db/client";
 import { errorMessage } from "../server/errors";
 import { claimNext, heartbeat, pruneJobs, releaseStaleJobs, resetRunningJobs } from "../server/jobs/queue";
@@ -46,9 +46,7 @@ function fillSlots() {
     const others = running.length - transfers;
     const exclude: Job["type"][] = [];
     if (transfers >= maxParallelTransfers) exclude.push("transfer_video");
-    if (others >= EXTRA_CONCURRENCY) {
-      exclude.push("scan_workflow", "generate_metadata", "check_processing", "sync_metadata");
-    }
+    if (others >= EXTRA_CONCURRENCY) exclude.push(...JOB_TYPES.filter((type) => type !== "transfer_video"));
     const job = claimNext(WORKER_ID, exclude);
     if (!job) return;
     startJob(job);

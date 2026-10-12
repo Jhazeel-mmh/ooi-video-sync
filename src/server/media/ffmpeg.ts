@@ -54,3 +54,46 @@ export async function probeDuration(input: string, options: { signal?: AbortSign
   const { stderr } = await runFfmpeg(["-i", input], { timeoutMs: 120_000, signal: options.signal });
   return parseDuration(stderr);
 }
+
+/**
+ * Extracts the first audio track as small speech-friendly Opus (mono, 16 kHz,
+ * 24 kbps: about 5 MB per 30 minutes). Reads the video by streaming, so a
+ * remote file isn't stored on disk.
+ */
+export async function extractAudio(
+  input: string,
+  output: string,
+  options: { maxSeconds?: number; signal?: AbortSignal } = {},
+): Promise<void> {
+  const { code, stderr } = await runFfmpeg(
+    [
+      "-y",
+      "-i", input,
+      "-map", "0:a:0",
+      "-vn", "-ac", "1", "-ar", "16000",
+      "-c:a", "libopus", "-b:a", "24k",
+      ...(options.maxSeconds ? ["-t", String(options.maxSeconds)] : []),
+      "-f", "ogg", output,
+    ],
+    { timeoutMs: 60 * 60_000, signal: options.signal },
+  );
+  if (code === 0) return;
+  if (/matches no streams|does not contain any stream/.test(stderr)) throw new NoAudioError();
+  throw new Error(`ffmpeg no pudo extraer el audio: ${stderr.trim().split("\n").at(-1)}`);
+}
+
+/** Copies `length` seconds of an Opus file starting at `start` (no re-encoding). */
+export async function cutAudio(input: string, output: string, start: number, length: number): Promise<void> {
+  const { code, stderr } = await runFfmpeg(
+    ["-y", "-ss", String(start), "-t", String(length), "-i", input, "-c", "copy", "-f", "ogg", output],
+    { timeoutMs: 5 * 60_000 },
+  );
+  if (code !== 0) throw new Error(`ffmpeg no pudo cortar el audio: ${stderr.trim().split("\n").at(-1)}`);
+}
+
+export class NoAudioError extends Error {
+  constructor() {
+    super("El video no tiene pista de audio");
+    this.name = "NoAudioError";
+  }
+}

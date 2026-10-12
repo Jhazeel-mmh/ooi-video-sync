@@ -23,18 +23,27 @@ export function sanitizeTitle(title: string, fallback = "Video"): string {
   return result || fallback;
 }
 
-export function sanitizeDescription(description: string): string {
-  const clean = stripAngleBrackets(description).replace(/\r\n/g, "\n").trim();
-  if (utf8Length(clean) <= DESCRIPTION_MAX_BYTES) return clean;
+/** Cuts `text` to at most `maxBytes` UTF-8 bytes without splitting a character. */
+export function truncateToBytes(text: string, maxBytes: number): string {
+  if (utf8Length(text) <= maxBytes) return text;
   let out = "";
   let bytes = 0;
-  for (const char of clean) {
+  for (const char of text) {
     const size = utf8Length(char);
-    if (bytes + size > DESCRIPTION_MAX_BYTES) break;
+    if (bytes + size > maxBytes) break;
     out += char;
     bytes += size;
   }
   return out.trimEnd();
+}
+
+export function sanitizeDescription(description: string): string {
+  return truncateToBytes(stripAngleBrackets(description).replace(/\r\n/g, "\n").trim(), DESCRIPTION_MAX_BYTES);
+}
+
+/** A single line safe for titles of chapters and the like. */
+export function sanitizeLine(text: string, maxChars = TITLE_MAX_CHARS): string {
+  return Array.from(stripAngleBrackets(text).replace(/\s+/g, " ").trim()).slice(0, maxChars).join("");
 }
 
 /** Tags with spaces count their surrounding quotes; tags are joined by commas. */

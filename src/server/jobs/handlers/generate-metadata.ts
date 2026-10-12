@@ -4,6 +4,7 @@ import { logEvent } from "../../events";
 import { filterFailure, needsDuration } from "../../filters";
 import { isFfmpegAvailable, probeDuration } from "../../media/ffmpeg";
 import { buildMetadata } from "../../naming/metadata";
+import { ensureTranscript, transcriptionUnavailableReason } from "../../naming/transcript";
 import { getDownloadUrl } from "../../providers/onedrive";
 import { getSettings } from "../../settings";
 import { candidateOf, duplicateMessage, findDuplicateOf } from "../../video-scope";
@@ -37,6 +38,10 @@ export async function generateMetadata({ videoId }: JobPayloads["generate_metada
     ignoreVideo(video, "duplicate", duplicateMessage(duplicate));
     logEvent({ videoId }, `Se ignora por duplicado: ${duplicateMessage(duplicate)}`);
     return;
+  }
+
+  if (workflow.useTranscript && video.transcript === null) {
+    video = await transcribeForNaming(video, workflow, ctx);
   }
 
   const metadata = await buildMetadata(video, workflow, { useAi: workflow.useAi });
@@ -84,4 +89,25 @@ async function measureDuration(video: Video, workflow: Workflow, ctx: JobContext
     logEvent({ videoId: video.id }, `No se pudo medir la duración: ${errorMessage(error)}; no se aplica el filtro de duración`, "warn");
   }
   return video;
+}
+
+/**
+ * Best effort: a temporary failure (rate limit, network) retries the job while
+ * attempts remain; otherwise the video is named without a transcript.
+ */
+async function transcribeForNaming(video: Video, workflow: Workflow, ctx: JobContext): Promise<Video> {
+  const unavailable = transcriptionUnavailableReason();
+  if (unavailable) {
+    logEvent({ videoId: video.id }, `No se transcribe: ${unavailable}`, "warn");
+    return video;
+  }
+  try {
+    const transcript = await ensureTranscript(video, workflow, ctx.signal);
+    return { ...video, transcript };
+  } catch (error) {
+    if (ctx.signal.aborted) throw error;
+    if (error instanceof RetryableError && canRetry(ctx)) throw error;
+    logEvent({ videoId: video.id }, `No se pudo transcribir: ${errorMessage(error)}. Se nombra sin transcripción`, "warn");
+    return video;
+  }
 }

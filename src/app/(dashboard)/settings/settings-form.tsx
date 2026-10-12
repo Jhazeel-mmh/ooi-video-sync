@@ -100,6 +100,12 @@ export function SettingsForm({ initial, timeZones, ai }: { initial: Settings; ti
           <OptionSelect label="Proveedor para títulos" value={provider} options={PROVIDER_LABELS} onChange={setProvider} />
           <OptionSelect label="Modelo de Claude" value={model} options={CLAUDE_LABELS} onChange={setModel} />
           <OptionSelect label="Modelo de Gemini" value={geminiModel} options={GEMINI_LABELS} onChange={setGeminiModel} />
+          <NumberField
+            name="transcriptMaxMinutes"
+            label="Minutos de audio a transcribir"
+            defaultValue={initial.transcriptMaxMinutes}
+            hint="0 = todo el video. Se transcribe con Gemini en tramos de 30 minutos."
+          />
         </CardContent>
       </Card>
 

@@ -21,6 +21,8 @@ export const settingsSchema = z.object({
   /** Claude model (key kept as `aiModel` for existing installs). */
   aiModel: z.enum(CLAUDE_MODELS).default("claude-opus-5-5"),
   geminiModel: z.enum(GEMINI_MODELS).default("gemini-3.8-flash"),
+  /** Minutes of audio to transcribe per video; 0 = the whole video. */
+  transcriptMaxMinutes: z.coerce.number().int().min(0).default(0),
   timeZone: z.string().min(1).default(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
   regionCode: z.string().length(2).default("US"),
 });

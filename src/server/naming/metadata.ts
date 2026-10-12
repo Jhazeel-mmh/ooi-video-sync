@@ -7,6 +7,7 @@ import { videos, type Video, type Workflow } from "../db/schema";
 import { errorMessage, RetryableError } from "../errors";
 import { getSettings } from "../settings";
 import { generateWithAi } from "./ai";
+import { appendChapters } from "./chapters";
 import { parseTags, sanitizeDescription, sanitizeTags, sanitizeTitle } from "./sanitize";
 import { formatDuration, recordingDate, renderTemplate, type TemplateVars } from "./template";
 
@@ -42,7 +43,10 @@ function recentTitles(video: Video): string[] {
     .map((r) => r.title!);
 }
 
-/** Renders the workflow templates and, if requested, asks Claude to improve them. */
+/**
+ * Renders the workflow templates and, if requested, asks the AI (Claude or
+ * Gemini) to improve them, using the video's transcript when there is one.
+ */
 export async function buildMetadata(video: Video, workflow: Workflow, options: { useAi: boolean }): Promise<GeneratedMetadata> {
   const settings = getSettings();
   const vars = templateVars(video, settings.timeZone);
@@ -52,6 +56,10 @@ export async function buildMetadata(video: Video, workflow: Workflow, options: {
     tags: sanitizeTags(parseTags(renderTemplate(workflow.tagsTemplate, vars, settings.timeZone))),
   };
   if (!options.useAi) return { ...template, source: "template" };
+
+  const transcript = video.transcript?.trim() || null;
+  // Chapters need timestamps, which only the transcript provides.
+  const withChapters = workflow.addChapters && transcript !== null;
 
   try {
     const ai = await generateWithAi(
@@ -65,11 +73,14 @@ export async function buildMetadata(video: Video, workflow: Workflow, options: {
         channelContext: workflow.aiContext,
         template,
         recentTitles: recentTitles(video),
+        transcript,
+        chapters: withChapters,
       },
     );
+    const description = sanitizeDescription(ai.description);
     return {
       title: sanitizeTitle(ai.title, template.title),
-      description: sanitizeDescription(ai.description),
+      description: withChapters && ai.chapters ? appendChapters(description, ai.chapters, video.durationMs) : description,
       tags: sanitizeTags(ai.tags),
       source: "ai",
     };

@@ -46,6 +46,8 @@ const workflowInput = z
     tagsTemplate: z.string().max(1000),
     useAi: checkbox,
     aiContext: z.string().max(4000),
+    useTranscript: checkbox,
+    addChapters: checkbox,
     privacyStatus: z.enum(PRIVACY_STATUSES),
     categoryId: z.string().min(1, "Elige una categoría"),
     playlistId: optionalText,

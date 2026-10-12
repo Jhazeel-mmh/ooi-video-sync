@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 import { env } from "../../env";
@@ -56,4 +57,25 @@ export async function generateWithGemini(input: AiMetadataInput, model: string):
   }
   if (!parsed?.success) throw new Error("La respuesta de Gemini no tiene el formato esperado");
   return parsed.data;
+}
+
+const TRANSCRIBE_PROMPT = `Transcribe literalmente este audio, en su idioma original.
+Empieza cada párrafo (y cada cambio de tema o de quien habla) con su marca de tiempo entre corchetes, en formato [mm:ss] o [h:mm:ss], medida desde el inicio de este audio.
+No agregues títulos, comentarios ni resúmenes: solo la transcripción.
+Si no hay habla, responde exactamente: [sin habla]`;
+
+/** Transcribes a short Opus file (sent inline; keep it under ~15 MB). */
+export async function transcribeAudio(file: string, model: string): Promise<string> {
+  const data = (await readFile(file)).toString("base64");
+  return geminiText(
+    {
+      model,
+      input: [
+        { type: "text", text: TRANSCRIBE_PROMPT },
+        { type: "audio", data, mime_type: "audio/ogg" },
+      ],
+      generation_config: { thinking_level: "minimal", max_output_tokens: 32_768 },
+    },
+    { timeoutMs: 10 * 60_000 },
+  );
 }

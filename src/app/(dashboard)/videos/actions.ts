@@ -7,6 +7,7 @@ import { PRIVACY_STATUSES } from "@/server/db/schema";
 import { logEvent } from "@/server/events";
 import { enqueue } from "@/server/jobs/queue";
 import { buildMetadata } from "@/server/naming/metadata";
+import { transcriptionUnavailableReason } from "@/server/naming/transcript";
 import { parseTags, sanitizeDescription, sanitizeTags, sanitizeTitle } from "@/server/naming/sanitize";
 import { requireAdmin } from "@/server/session";
 import {
@@ -141,4 +142,14 @@ export async function suggestMetadata(
     message: useAi ? "Propuesta de la IA lista; revisa y guarda" : "Plantilla aplicada; revisa y guarda",
     data: { title: result.title, description: result.description, tags: result.tags },
   };
+}
+
+export async function transcribeVideoNow(videoId: number): Promise<ActionResult> {
+  await requireAdmin();
+  const unavailable = transcriptionUnavailableReason();
+  if (unavailable) return { ok: false, error: unavailable };
+  if (!loadVideo(videoId)) return { ok: false, error: "El video no existe" };
+  enqueue("transcribe_video", { videoId }, { dedupeKey: `transcribe:${videoId}`, maxAttempts: 3 });
+  refresh();
+  return { ok: true, message: "Transcripción en cola; aparecerá aquí en unos minutos" };
 }

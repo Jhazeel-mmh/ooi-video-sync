@@ -8,6 +8,7 @@ import { checkProcessing } from "./handlers/check-processing";
 import { generateMetadata } from "./handlers/generate-metadata";
 import { scanWorkflow } from "./handlers/scan";
 import { syncMetadata } from "./handlers/sync-metadata";
+import { transcribeVideoJob } from "./handlers/transcribe";
 import { transferVideo } from "./handlers/transfer";
 import { completeJob, failJob, rescheduleJob, type JobPayloads } from "./queue";
 
@@ -27,6 +28,7 @@ export function canRetry(ctx: JobContext): boolean {
 const handlers: { [T in JobType]: (payload: JobPayloads[T], ctx: JobContext) => Promise<void> } = {
   scan_workflow: scanWorkflow,
   generate_metadata: generateMetadata,
+  transcribe_video: transcribeVideoJob,
   transfer_video: transferVideo,
   check_processing: checkProcessing,
   sync_metadata: syncMetadata,
@@ -80,6 +82,12 @@ function handleFailure(job: Job, error: unknown, ctx: JobContext): void {
 function onVideoJobFailure(type: JobType, videoId: number, message: string, willRetry: boolean): void {
   const loaded = loadVideo(videoId);
   if (!loaded) return;
+
+  if (type === "transcribe_video") {
+    // On-demand extra: the video itself is fine, only the transcript is missing.
+    logEvent({ videoId }, `No se pudo transcribir: ${message}${willRetry ? " (se reintentará)" : ""}`, willRetry ? "warn" : "error");
+    return;
+  }
 
   if (type === "sync_metadata") {
     updateVideo(videoId, { error: `No se pudo actualizar en YouTube: ${message}` });

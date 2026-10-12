@@ -1,24 +1,27 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { AlertCircle, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
+import { ActionButton } from "@/components/action-button";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ACTIVE_STATUSES, TransferProgress, VideoStatusBadge } from "@/components/video-status";
 import { formatBytes, formatDateTime, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getDb } from "@/server/db/client";
-import { events } from "@/server/db/schema";
+import { events, jobs } from "@/server/db/schema";
 import { isAiConfigured } from "@/server/naming/ai";
+import { transcriptionUnavailableReason } from "@/server/naming/transcript";
 import { formatDuration, recordingDate } from "@/server/naming/template";
 import { requireAdmin } from "@/server/session";
 import { getSettings } from "@/server/settings";
 import { loadVideo } from "@/server/videos";
+import { transcribeVideoNow } from "../actions";
 import { VideoEditor } from "./video-editor";
 
 export default function VideoPage({ params }: PageProps<"/videos/[id]">) {
@@ -44,6 +47,19 @@ async function VideoDetail({ params }: { params: PageProps<"/videos/[id]">["para
     .limit(100)
     .all();
   const editable = !["discovered", "ignored"].includes(video.status) && video.title !== null;
+  const transcribing = Boolean(
+    getDb()
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.type, "transcribe_video"),
+          inArray(jobs.status, ["queued", "running"]),
+          sql`json_extract(${jobs.payload}, '$.videoId') = ${video.id}`,
+        ),
+      )
+      .get(),
+  );
 
   return (
     <>
@@ -104,6 +120,12 @@ async function VideoDetail({ params }: { params: PageProps<"/videos/[id]">["para
               </CardContent>
             </Card>
           )}
+          <TranscriptCard
+            videoId={video.id}
+            transcript={video.transcript}
+            transcribing={transcribing}
+            unavailable={transcriptionUnavailableReason()}
+          />
         </div>
         <aside className="space-y-6">
           <Card>
@@ -160,8 +182,54 @@ async function VideoDetail({ params }: { params: PageProps<"/videos/[id]">["para
           </Card>
         </aside>
       </div>
-      <AutoRefresh active={ACTIVE_STATUSES.includes(video.status)} />
+      <AutoRefresh active={ACTIVE_STATUSES.includes(video.status) || transcribing} />
     </>
+  );
+}
+
+function TranscriptCard({
+  videoId,
+  transcript,
+  transcribing,
+  unavailable,
+}: {
+  videoId: number;
+  transcript: string | null;
+  transcribing: boolean;
+  unavailable: string | null;
+}) {
+  const words = transcript ? transcript.split(/\s+/).filter(Boolean).length : 0;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Transcripción</CardTitle>
+        <CardDescription>
+          La hace Gemini a partir del audio. Si existe, «Proponer con IA» la usa para el título, la descripción y los
+          capítulos.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {transcript ? (
+          <details>
+            <summary className="cursor-pointer">Ver transcripción ({words} palabras)</summary>
+            <div className="mt-2 max-h-96 overflow-y-auto rounded-md bg-muted/40 p-3 whitespace-pre-wrap">{transcript}</div>
+          </details>
+        ) : transcript === "" ? (
+          <p className="text-muted-foreground">El audio no tiene habla para transcribir.</p>
+        ) : (
+          <p className="text-muted-foreground">Todavía no hay transcripción.</p>
+        )}
+        {transcribing ? (
+          <p className="text-muted-foreground">Transcribiendo… puede tardar unos minutos.</p>
+        ) : unavailable ? (
+          <p className="text-muted-foreground">{unavailable}</p>
+        ) : (
+          <ActionButton size="sm" variant="outline" action={transcribeVideoNow.bind(null, videoId)}>
+            {transcript === null ? "Transcribir" : "Volver a transcribir"}
+          </ActionButton>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

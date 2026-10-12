@@ -213,9 +213,16 @@ export async function uploadFile(
   filePath: string,
   size: number,
   offset: number,
-  options: { signal?: AbortSignal; onProgress?: (uploaded: number) => void; chunkSize?: number } = {},
+  options: {
+    signal?: AbortSignal;
+    onProgress?: (uploaded: number) => void;
+    chunkSize?: number;
+    /** Base delay for in-place retries (doubles per consecutive failure). */
+    retryDelayMs?: number;
+  } = {},
 ): Promise<YouTubeVideo> {
   const chunkSize = options.chunkSize ?? DEFAULT_CHUNK_SIZE;
+  const retryDelayMs = options.retryDelayMs ?? 1000;
   const file = await open(filePath, "r");
   const buffer = Buffer.alloc(Math.min(chunkSize, Math.max(size, 1)));
   let failures = 0;
@@ -243,7 +250,7 @@ export async function uploadFile(
         if (options.signal?.aborted || !(error instanceof RetryableError)) throw error;
         failures += 1;
         if (failures >= MAX_CONSECUTIVE_CHUNK_FAILURES) throw error;
-        await sleep(Math.min(2 ** failures * 1000, 30_000), undefined, { signal: options.signal });
+        await sleep(Math.min(2 ** (failures - 1) * retryDelayMs, 30_000), undefined, { signal: options.signal });
         state = await queryUpload(accountId, sessionUrl, size);
       }
 

@@ -12,7 +12,7 @@ import { timeAgo } from "@/lib/format";
 import { getDb } from "@/server/db/client";
 import { accounts, videos, workflows } from "@/server/db/schema";
 import { requireAdmin } from "@/server/session";
-import { deleteWorkflow, setWorkflowEnabled } from "./actions";
+import { deleteWorkflow, scanWorkflowNow, setWorkflowEnabled } from "./actions";
 
 export default function WorkflowsPage() {
   return (
@@ -109,6 +109,14 @@ async function WorkflowList() {
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-1">
+                    <ActionButton
+                      size="sm"
+                      variant="ghost"
+                      disabled={!wf.enabled || paused}
+                      action={scanWorkflowNow.bind(null, wf.id)}
+                    >
+                      Revisar ahora
+                    </ActionButton>
                     <ActionButton size="sm" variant="ghost" action={setWorkflowEnabled.bind(null, wf.id, !wf.enabled)}>
                       {wf.enabled ? "Pausar" : "Activar"}
                     </ActionButton>

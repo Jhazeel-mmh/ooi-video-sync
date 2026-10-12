@@ -41,7 +41,11 @@ export class PermanentError extends Error {
 
 /** Not a failure: run the same job again at `runAt` without counting an attempt. */
 export class RescheduleSignal extends Error {
-  constructor(readonly runAt: Date) {
+  constructor(
+    readonly runAt: Date,
+    /** Replaces the job payload, e.g. to carry a poll counter. */
+    readonly payload?: Record<string, unknown>,
+  ) {
     super("reschedule");
     this.name = "RescheduleSignal";
   }

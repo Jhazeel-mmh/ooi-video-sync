@@ -1,0 +1,116 @@
+import { and, eq } from "drizzle-orm";
+import { getDb } from "../../db/client";
+import { videos, workflows } from "../../db/schema";
+import { errorMessage } from "../../errors";
+import { logEvent } from "../../events";
+import { isVideoItem, listFiles, parentPathOf } from "../../providers/onedrive";
+import { nextSequence, queueMetadata } from "../../videos";
+import type { JobPayloads } from "../queue";
+
+export async function scanWorkflow({ workflowId }: JobPayloads["scan_workflow"]): Promise<void> {
+  const db = getDb();
+  const workflow = db.select().from(workflows).where(eq(workflows.id, workflowId)).get();
+  if (!workflow?.enabled) return;
+
+  const firstScan = workflow.lastScannedAt === null;
+  let files;
+  try {
+    files = (
+      await listFiles(workflow.onedriveAccountId, workflow.driveId, workflow.folderId, workflow.recursive)
+    ).filter(isVideoItem);
+  } catch (error) {
+    // Wait for the next interval instead of hammering a broken folder.
+    db.update(workflows)
+      .set({ lastScannedAt: new Date(), lastScanError: errorMessage(error) })
+      .where(eq(workflows.id, workflowId))
+      .run();
+    logEvent({ workflowId }, `Error al revisar la carpeta: ${errorMessage(error)}`, "error");
+    throw error;
+  }
+
+  const now = new Date();
+  const known = new Map(
+    db.select().from(videos).where(eq(videos.workflowId, workflowId)).all().map((v) => [v.itemId, v]),
+  );
+  let discovered = 0;
+
+  for (const item of files) {
+    const size = item.size ?? 0;
+    const modifiedAt = new Date(item.lastModifiedDateTime);
+    const previous = known.get(item.id);
+
+    if (!previous) {
+      // On the first scan, existing videos are skipped unless the workflow asks for them.
+      const status = firstScan && !workflow.includeExisting ? "ignored" : "discovered";
+      const inserted = db
+        .insert(videos)
+        .values({
+          workflowId,
+          driveId: item.parentReference?.driveId ?? workflow.driveId,
+          itemId: item.id,
+          name: item.name,
+          path: parentPathOf(item),
+          size,
+          mimeType: item.file?.mimeType ?? null,
+          eTag: item.eTag ?? null,
+          sourceCreatedAt: new Date(item.fileSystemInfo?.createdDateTime ?? item.createdDateTime),
+          sourceModifiedAt: modifiedAt,
+          durationMs: item.video?.duration ?? null,
+          lastSeenSize: size,
+          stableSince: modifiedAt,
+          status,
+          error: status === "ignored" ? "Ya estaba en la carpeta al crear el workflow" : null,
+        })
+        .returning({ id: videos.id })
+        .get();
+      if (status === "discovered") {
+        discovered += 1;
+        logEvent({ videoId: inserted.id, workflowId }, `Detectado en OneDrive: ${item.name}`);
+      }
+    } else if (previous.status === "discovered" && (previous.lastSeenSize !== size || previous.eTag !== item.eTag)) {
+      // Still changing: restart the stability timer.
+      db.update(videos)
+        .set({
+          name: item.name,
+          size,
+          lastSeenSize: size,
+          eTag: item.eTag ?? null,
+          sourceModifiedAt: modifiedAt,
+          durationMs: item.video?.duration ?? previous.durationMs,
+          stableSince: now,
+        })
+        .where(eq(videos.id, previous.id))
+        .run();
+    }
+  }
+
+  // Videos waiting for review that disappeared from the folder no longer need attention.
+  const present = new Set(files.map((f) => f.id));
+  for (const video of known.values()) {
+    if ((video.status === "discovered" || video.status === "pending_review") && !present.has(video.itemId)) {
+      db.update(videos)
+        .set({ status: "ignored", error: "Ya no está en la carpeta de OneDrive" })
+        .where(eq(videos.id, video.id))
+        .run();
+      logEvent({ videoId: video.id, workflowId }, "Ya no está en la carpeta de OneDrive; se ignora", "warn");
+    }
+  }
+
+  // Stable videos move on to naming. Sequence numbers follow detection order.
+  const ready = db
+    .select()
+    .from(videos)
+    .where(and(eq(videos.workflowId, workflowId), eq(videos.status, "discovered")))
+    .orderBy(videos.stableSince, videos.id)
+    .all()
+    .filter((v) => v.size > 0 && now.getTime() - v.stableSince.getTime() >= workflow.stableMinutes * 60_000);
+  for (const video of ready) {
+    if (video.sequence === null) {
+      db.update(videos).set({ sequence: nextSequence(workflowId) }).where(eq(videos.id, video.id)).run();
+    }
+    queueMetadata(video.id);
+  }
+
+  db.update(workflows).set({ lastScannedAt: now, lastScanError: null }).where(eq(workflows.id, workflowId)).run();
+  if (discovered > 0) logEvent({ workflowId }, `${discovered} video(s) nuevo(s) en ${workflow.folderPath}`);
+}

@@ -1,4 +1,5 @@
-import { formatDistanceToNow } from "date-fns";
+import { TZDate } from "@date-fns/tz";
+import { format, formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 
 export function formatBytes(bytes: number | null | undefined): string {
@@ -11,4 +12,8 @@ export function formatBytes(bytes: number | null | undefined): string {
 
 export function timeAgo(date: Date | null | undefined): string {
   return date ? formatDistanceToNow(date, { addSuffix: true, locale: es }) : "nunca";
+}
+
+export function formatDateTime(date: Date, timeZone: string): string {
+  return format(new TZDate(date.getTime(), timeZone), "d MMM yyyy, HH:mm", { locale: es });
 }

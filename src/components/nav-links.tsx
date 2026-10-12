@@ -3,6 +3,7 @@
 import { FolderSync, Home, Link2, Settings, Video } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Suspense } from "react";
 import { cn } from "@/lib/utils";
 
 const links = [
@@ -13,12 +14,24 @@ const links = [
   { href: "/settings", label: "Ajustes", icon: Settings },
 ] as const;
 
+/** The active-link highlight needs the URL, which streams in after the static shell. */
 export function NavLinks() {
-  const pathname = usePathname();
+  return (
+    <Suspense fallback={<LinkList pathname={null} />}>
+      <CurrentLinks />
+    </Suspense>
+  );
+}
+
+function CurrentLinks() {
+  return <LinkList pathname={usePathname()} />;
+}
+
+function LinkList({ pathname }: { pathname: string | null }) {
   return (
     <nav className="flex gap-1 md:flex-col">
       {links.map(({ href, label, icon: Icon }) => {
-        const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+        const active = href === "/" ? pathname === "/" : Boolean(pathname?.startsWith(href));
         return (
           <Link
             key={href}

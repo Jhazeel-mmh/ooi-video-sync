@@ -8,6 +8,7 @@ import type { ActionResult } from "@/lib/action-result";
 import { getDb } from "@/server/db/client";
 import { accounts, POST_UPLOAD_ACTIONS, PRIVACY_STATUSES, WORKFLOW_MODES, workflows } from "@/server/db/schema";
 import { errorMessage } from "@/server/errors";
+import { scanNow } from "@/server/jobs/scheduler";
 import { getDefaultDriveId, getItem, isVideoItem, itemPath, listChildren } from "@/server/providers/onedrive";
 import { listCategories, listPlaylists } from "@/server/providers/youtube";
 import { requireAdmin } from "@/server/session";
@@ -92,6 +93,12 @@ export async function setWorkflowEnabled(workflowId: number, enabled: boolean): 
   getDb().update(workflows).set({ enabled }).where(eq(workflows.id, workflowId)).run();
   refresh();
   return { ok: true, message: enabled ? "Workflow activado" : "Workflow en pausa" };
+}
+
+export async function scanWorkflowNow(workflowId: number): Promise<ActionResult> {
+  await requireAdmin();
+  scanNow(workflowId);
+  return { ok: true, message: "Revisión en cola; el worker la hará en unos segundos" };
 }
 
 export type FolderListing = {

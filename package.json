@@ -16,18 +16,27 @@
     "backup": "tsx scripts/backup.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.133.0",
+    "@date-fns/tz": "1.5.0",
     "@next/env": "16.4.0",
+    "better-sqlite3": "13.0.3",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",
+    "date-fns": "4.4.0",
+    "drizzle-orm": "0.45.4",
+    "iron-session": "9.0.1",
     "lucide-react": "^1.55.0",
     "next": "16.4.0",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.8.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "server-only": "0.0.1",
     "shadcn": "^4.21.4",
     "sonner": "^2.0.8",
-    "tw-animate-css": "^1.4.0"
+    "tsx": "4.23.15",
+    "tw-animate-css": "^1.4.0",
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",

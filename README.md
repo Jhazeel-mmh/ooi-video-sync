@@ -18,16 +18,17 @@ Dos procesos comparten una base SQLite en `DATA_DIR`:
 | Proceso | Comando | Qué hace |
 | --- | --- | --- |
 | Web | `pnpm start` | Dashboard, login y callbacks de OAuth |
-| Worker | `pnpm worker:start` | Revisa carpetas, genera títulos, descarga, sube y sigue el procesamiento |
+| Worker | `pnpm worker:start` | Revisa carpetas, aplica filtros, transcribe, genera títulos, descarga, sube, sigue el procesamiento y manda los avisos |
 
 Ciclo de un video:
 
 ```
-detectado → (por revisar) → en cola → descargando → subiendo → procesando en YouTube → publicado
-                                         ↘ error (reintentable) · esperando cuota · ignorado
+detectado → preparación → (por revisar) → en cola → descargando → subiendo → procesando en YouTube → publicado
+                 ↘ ignorado (filtro o duplicado)         ↘ error (reintentable) · esperando cuota
 ```
 
-- **Detectado**: el archivo apareció en la carpeta. Se espera a que lleve unos minutos sin cambios (configurable) para no subir algo que aún se sincroniza. Después se revisan los filtros y los duplicados y, si corresponde, se transcribe y se genera el título.
+- **Detectado**: el archivo apareció en la carpeta. Se espera a que lleve unos minutos sin cambios (configurable) para no subir algo que aún se sincroniza.
+- **Preparación**: se revisan los filtros con el tamaño y la duración definitivos, se descartan duplicados y, si el workflow lo pide, se transcribe el audio y se genera el título.
 - **Por revisar**: solo en modo revisión. Editas el título y lo apruebas.
 - **Esperando cuota**: la cuota diaria se agotó; se reintenta solo después de la medianoche del Pacífico.
 - Si una cuenta pierde el acceso, sus workflows se pausan. Al reconectarla, los videos afectados se reintentan solos.
@@ -81,14 +82,14 @@ openssl rand -base64 48   # y otro distinto en SESSION_SECRET
 pnpm hash-password        # pega la línea ADMIN_PASSWORD_HASH=… en .env
 ```
 
-Completa las credenciales de Microsoft y Google en `.env` y levanta los dos procesos, cada uno en su terminal:
+Completa en `.env` las credenciales de Microsoft y Google y, si vas a usar IA, `GEMINI_API_KEY` y/o `ANTHROPIC_API_KEY`. Luego levanta los dos procesos, cada uno en su terminal:
 
 ```bash
 pnpm dev       # dashboard en http://localhost:3000
 pnpm worker    # worker (se reinicia al cambiar el código)
 ```
 
-La base de datos y sus migraciones se crean solas en `DATA_DIR` (por defecto `./data`).
+La base de datos y sus migraciones se crean solas en `DATA_DIR` (por defecto `./data`). Si cambias el `.env`, reinicia los dos procesos: ninguno lo vuelve a leer en caliente.
 
 > **No pierdas `ENCRYPTION_KEY`.** Los tokens OAuth se guardan cifrados con ella; si cambia, tendrás que reconectar todas las cuentas.
 
@@ -159,10 +160,27 @@ src/app/            dashboard (Next.js App Router) y rutas de OAuth
 src/server/         lógica compartida por la web y el worker
   db/               esquema Drizzle y conexión SQLite
   providers/        OAuth, Microsoft Graph y YouTube Data API (subida resumable)
-  naming/           plantillas, límites de YouTube e IA
+  naming/           plantillas, límites de YouTube, transcripción, capítulos
+    ai/             Claude y Gemini (prompt común)
+  media/            ffmpeg: duración y extracción de audio
   jobs/             cola, planificador y handlers del pipeline
+  filters.ts        filtros de los workflows (puro, también lo usa el formulario)
+  video-scope.ts    qué videos se procesan: filtros, duplicados, reevaluación
+  notify.ts         avisos a Discord
 src/worker/         proceso worker
 drizzle/            migraciones SQL
 deploy/             systemd y Caddy
 tests/              tests
 ```
+
+## Problemas frecuentes
+
+| Síntoma | Causa y solución |
+| --- | --- |
+| Google muestra `Error 403: access_denied` | La app de Google sigue en modo *Testing* y tu cuenta no es usuario de prueba. Publícala (*Google Auth Platform → Público → Publicar app*) o agrégate como tester. |
+| `redirect_uri_mismatch` | El redirect URI registrado debe ser exactamente `APP_URL` + `/api/auth/<proveedor>/callback` (revisa http/https, el puerto y que no sobre una `/`). |
+| El inicio dice "El worker no está corriendo" | Inicia `pnpm worker` (o el servicio `ovs-worker`). Sin él no se detecta ni se sube nada. |
+| Los videos subidos quedan privados | El proyecto de Google Cloud no pasó la auditoría de YouTube API Services; ver la sección de Google. |
+| Videos en "Esperando cuota" | Se agotó la cuota diaria de YouTube; se reanudan solos después de la medianoche del Pacífico. Ajusta los valores reales en **Ajustes**. |
+| "Gemini: límite de uso alcanzado" en el historial | Límite de la capa gratuita; el video se reintenta más tarde solo. |
+| La transcripción no está disponible | Falta `GEMINI_API_KEY` en `.env` (o ffmpeg, si usas `FFMPEG_PATH`). Reinicia los procesos después de editar `.env`. |

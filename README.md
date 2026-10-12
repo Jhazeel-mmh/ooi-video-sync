@@ -4,9 +4,12 @@ Sincroniza videos de **OneDrive** a **YouTube** con un dashboard para revisar, n
 
 - Vincula una o varias cuentas de OneDrive (personales o de trabajo) y canales de YouTube por OAuth.
 - Cada **workflow** vigila una carpeta de OneDrive y sube sus videos nuevos a un canal.
-- El título, la descripción y las etiquetas salen de **plantillas** (`{filename}`, `{date}`, `{n}`…) o los propone **Claude** con el contexto de tu canal.
+- **Filtros acumulables** por fecha de grabación, tamaño, duración y palabras en el nombre, y **omisión de duplicados**.
+- El título, la descripción y las etiquetas salen de **plantillas** (`{filename}`, `{date}`, `{n}`…) o los propone la IA (**Claude** o **Gemini**, que tiene capa gratuita) con el contexto de tu canal.
+- Opcionalmente, Gemini **transcribe el audio** para que la IA titule según lo que se dice en el video, y se agregan **capítulos** a la descripción.
 - Modo **revisión** (apruebas cada video desde el dashboard) o **automático**.
 - Las descargas y subidas se **reanudan** si algo se corta, y el worker respeta la **cuota diaria** de YouTube.
+- **Avisos a Discord** cuando un video se publica, falla o hay videos por revisar.
 
 ## Cómo funciona
 
@@ -24,7 +27,7 @@ detectado → (por revisar) → en cola → descargando → subiendo → procesa
                                          ↘ error (reintentable) · esperando cuota · ignorado
 ```
 
-- **Detectado**: el archivo apareció en la carpeta. Se espera a que lleve unos minutos sin cambios (configurable) para no subir algo que aún se sincroniza.
+- **Detectado**: el archivo apareció en la carpeta. Se espera a que lleve unos minutos sin cambios (configurable) para no subir algo que aún se sincroniza. Después se revisan los filtros y los duplicados y, si corresponde, se transcribe y se genera el título.
 - **Por revisar**: solo en modo revisión. Editas el título y lo apruebas.
 - **Esperando cuota**: la cuota diaria se agotó; se reintenta solo después de la medianoche del Pacífico.
 - Si una cuenta pierde el acceso, sus workflows se pausan. Al reconectarla, los videos afectados se reintentan solos.
@@ -34,6 +37,7 @@ detectado → (por revisar) → en cola → descargando → subiendo → procesa
 - Node.js 22 o superior y pnpm.
 - Herramientas para compilar `better-sqlite3`: `build-essential` y `python3` (en Debian/Ubuntu: `sudo apt install build-essential python3`).
 - Espacio en disco para los archivos temporales: cada transferencia ocupa el tamaño del video mientras dura.
+- ffmpeg viene incluido (paquete `ffmpeg-static`); se usa para medir duraciones y extraer el audio. Si prefieres el del sistema, pon su ruta en `FFMPEG_PATH`.
 
 ## 1. Configuración externa
 
@@ -56,9 +60,16 @@ detectado → (por revisar) → en cola → descargando → subiendo → procesa
 
 > ⚠️ **Videos privados y cuota.** Los proyectos que no pasaron la [auditoría de YouTube API Services](https://support.google.com/youtube/contact/yt_api_form) solo pueden subir videos **privados**: YouTube ignora la privacidad pedida (la app te avisa cuando pasa). La cuota por defecto es de 10 000 unidades diarias. El costo de cada subida aparece distinto según la fuente, así que verifícalo en *APIs → YouTube Data API v3 → Quotas* y ajústalo en **Ajustes** del dashboard.
 
-### Anthropic (opcional)
+### IA: Gemini y/o Claude (opcional)
 
-Para que Claude proponga títulos y descripciones, crea una API key en [platform.claude.com](https://platform.claude.com/) y guárdala en `ANTHROPIC_API_KEY`. Sin ella, la app funciona solo con plantillas.
+Sin ninguna key, la app funciona solo con plantillas.
+
+- **Gemini (gratis)**: entra a [Google AI Studio → API keys](https://aistudio.google.com/apikey), crea una key (puedes usar el mismo proyecto de Google Cloud) y guárdala en `GEMINI_API_KEY`. Sin facturación activa usas la capa gratuita de `gemini-3.8-flash` y `gemini-3.5-flash-lite`.
+  - ⚠️ En la capa gratuita **Google usa lo que le envías (incluido el audio) para mejorar sus productos**.
+  - Sus límites por minuto y por día solo se ven en AI Studio. Cuando la app choca con un límite, reintenta el video más tarde.
+- **Claude**: crea una key en [platform.claude.com](https://platform.claude.com/) y guárdala en `ANTHROPIC_API_KEY`.
+- **Quién genera los títulos**: en modo *Automático* (por defecto) se usa Claude si hay `ANTHROPIC_API_KEY` y, si no, Gemini. En **Ajustes** puedes fijar uno y elegir el modelo de cada proveedor.
+- **La transcripción siempre usa Gemini**, porque la API de Claude no acepta audio: hace falta `GEMINI_API_KEY` aunque los títulos los haga Claude.
 
 ## 2. Instalación local
 
@@ -85,9 +96,21 @@ La base de datos y sus migraciones se crean solas en `DATA_DIR` (por defecto `./
 
 1. **Cuentas**: conecta OneDrive y el canal de YouTube. Si tienes varios canales, conecta cada uno y elige el canal en la pantalla de Google.
 2. **Workflows → Nuevo**: elige la carpeta de OneDrive y el canal, la privacidad, la categoría y la playlist, el modo y las plantillas. La vista previa muestra el resultado con un nombre de archivo de ejemplo.
-   - *Qué videos procesar*: **solo los que lleguen a partir de ahora** (lo que ya estaba en la carpeta se ignora), **todos los de la carpeta** o **los grabados desde una fecha**. Si lo cambias en un workflow existente, se recuperan los videos que se habían ignorado por esa regla y ahora la cumplen; los que ignoraste a mano no se tocan.
+   - *Procesar los videos que ya están en la carpeta*: si está apagado, solo se procesan los que lleguen después de crear el workflow.
+   - *Filtros* (opcionales y acumulables; un video se procesa solo si cumple todos):
+     - fecha de grabación desde y/o hasta;
+     - tamaño mínimo y/o máximo;
+     - duración mínima y/o máxima (si OneDrive no la informa, se mide con ffmpeg leyendo solo el encabezado del archivo);
+     - el nombre contiene alguna de ciertas palabras y/o no contiene ninguna de otras (sin distinguir mayúsculas ni acentos);
+     - omitir duplicados: si el mismo archivo ya se subió o está aprobado en cualquier workflow, no se sube de nuevo.
+
+     El formulario muestra un resumen de lo que se va a procesar. Si cambias los filtros o la opción anterior en un workflow existente, se recuperan los videos que se habían ignorado por esas reglas y ahora las cumplen, y se excluyen los pendientes que ya no. Los que ignoraste a mano no se tocan.
+   - *Generar con IA*, con el contexto de tu canal (tono, idioma, textos fijos para la descripción).
+   - *Usar la transcripción del audio*: antes de nombrar, ffmpeg extrae el audio leyendo el video desde OneDrive sin guardarlo, Gemini lo transcribe en tramos de 30 minutos (en Ajustes puedes limitar cuántos minutos transcribir) y la IA usa ese texto como fuente principal. La transcripción se ve en la página de cada video, y ahí también se puede transcribir a mano.
+   - *Agregar capítulos*: la IA divide el video en partes con las marcas de tiempo de la transcripción y se agregan a la descripción con el formato que YouTube reconoce (empieza en 00:00, al menos 3 capítulos de 10 segundos o más).
    - *Después de subir* puede mover el archivo a otra carpeta de OneDrive.
 3. **Videos**: revisa, edita y aprueba. Las acciones en lote permiten aprobar, reintentar, regenerar el título, ignorar o restaurar. Si editas un video que ya está en YouTube, el cambio se sincroniza allá.
+4. **Avisos a Discord** (opcional): en Discord ve a *Ajustes del canal → Integraciones → Webhooks → Nuevo webhook* y copia la URL. Pégala en **Ajustes → Avisos a Discord** y usa *Enviar prueba*. Llega un mensaje cuando un video se publica o falla, cuando una cuenta necesita reconectarse, y uno agrupado (como máximo cada 30 minutos por workflow) cuando hay videos nuevos por revisar.
 
 Variables de las plantillas:
 

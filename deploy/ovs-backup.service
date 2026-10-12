@@ -1,0 +1,9 @@
+[Unit]
+Description=OOI Video Sync - respaldo de la base de datos
+
+[Service]
+Type=oneshot
+User=ovs
+WorkingDirectory=/opt/ooi-video-sync
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/env pnpm backup

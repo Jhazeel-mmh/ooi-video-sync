@@ -1,0 +1,6 @@
+# Caddy obtiene el certificado HTTPS automáticamente.
+# Cambia el dominio y usa el mismo en APP_URL y en los redirect URIs de OAuth.
+videos.example.com {
+	encode gzip
+	reverse_proxy localhost:3000
+}

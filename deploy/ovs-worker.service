@@ -1,0 +1,21 @@
+# Copia a /etc/systemd/system/ y ajusta User y WorkingDirectory.
+# Debe haber un solo worker por base de datos.
+[Unit]
+Description=OOI Video Sync - worker (detección y subidas)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ovs
+WorkingDirectory=/opt/ooi-video-sync
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/env pnpm worker:start
+Restart=always
+RestartSec=10
+# Da tiempo a que las transferencias guarden su progreso al detenerse.
+KillSignal=SIGTERM
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target

@@ -12,7 +12,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
-    "hash-password": "tsx scripts/hash-password.mts"
+    "hash-password": "tsx scripts/hash-password.mts",
+    "backup": "tsx scripts/backup.ts"
   },
   "dependencies": {
     "@next/env": "16.4.0",

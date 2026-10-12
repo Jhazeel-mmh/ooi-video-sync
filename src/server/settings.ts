@@ -1,0 +1,38 @@
+import { z } from "zod";
+import { getDb } from "./db/client";
+import { settings } from "./db/schema";
+
+export const AI_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"] as const;
+
+export const settingsSchema = z.object({
+  /** Daily YouTube Data API quota for the Google Cloud project. */
+  dailyQuotaUnits: z.coerce.number().int().min(0).default(10_000),
+  /** Units charged per `videos.insert`; verify the current value in the Cloud console. */
+  uploadCostUnits: z.coerce.number().int().min(0).default(1600),
+  /** Extra cap on uploads per day; 0 means "only limited by quota". */
+  maxUploadsPerDay: z.coerce.number().int().min(0).default(0),
+  maxParallelTransfers: z.coerce.number().int().min(1).max(4).default(1),
+  aiModel: z.enum(AI_MODELS).default("claude-opus-5-5"),
+  timeZone: z.string().min(1).default(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
+  regionCode: z.string().length(2).default("US"),
+});
+
+export type Settings = z.infer<typeof settingsSchema>;
+
+export function getSettings(): Settings {
+  const rows = getDb().select().from(settings).all();
+  const raw = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  const parsed = settingsSchema.safeParse(raw);
+  // A bad stored value shouldn't take the app down; fall back to defaults.
+  return parsed.success ? parsed.data : settingsSchema.parse({});
+}
+
+export function updateSettings(values: Partial<Settings>): void {
+  const db = getDb();
+  db.transaction((tx) => {
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) continue;
+      tx.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
+    }
+  });
+}

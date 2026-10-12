@@ -1,7 +1,7 @@
 import { asc } from "drizzle-orm";
 import { getDb } from "@/server/db/client";
 import { accounts, type Account } from "@/server/db/schema";
-import { env } from "@/server/env";
+import { isAiConfigured } from "@/server/naming/ai";
 import { getSettings } from "@/server/settings";
 import type { AccountOption, WorkflowFormValues } from "./workflow-form";
 
@@ -57,7 +57,7 @@ export function workflowFormProps() {
   return {
     onedriveAccounts: all.filter((a) => a.provider === "microsoft").map(toOption),
     youtubeAccounts: all.filter((a) => a.provider === "google").map(toOption),
-    aiAvailable: Boolean(env().ANTHROPIC_API_KEY),
+    aiAvailable: isAiConfigured(),
     timeZone: getSettings().timeZone,
   };
 }

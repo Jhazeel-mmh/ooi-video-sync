@@ -42,6 +42,15 @@ type Handler = (url: URL, init: RequestInit) => Response | Promise<Response>;
 export function mockFetch(handler: Handler) {
   const calls: { url: URL; init: RequestInit }[] = [];
   globalThis.fetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
+    if (input instanceof Request) {
+      // SDKs may send a Request object; expose its parts like a plain init.
+      init = {
+        method: input.method,
+        headers: input.headers,
+        body: input.body ? await input.text() : undefined,
+        ...init,
+      };
+    }
     const url = new URL(input instanceof Request ? input.url : input);
     calls.push({ url, init });
     return handler(url, init);

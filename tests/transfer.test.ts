@@ -16,7 +16,7 @@ import { createWorkflow, json, mockFetch } from "./helpers";
 const CONTENT = Buffer.from("abcdefghijklmnopqrstuvwxyz0123456789");
 const SESSION = "https://www.googleapis.com/upload/youtube/v3/videos?upload_id=s1";
 const DOWNLOAD = "https://storage.example/download/file";
-const ctx = { signal: new AbortController().signal };
+const ctx = { signal: new AbortController().signal, attempt: 1, maxAttempts: 5 };
 
 function createVideo(overrides: Partial<typeof videos.$inferInsert> = {}) {
   const workflow = createWorkflow({ playlistId: "PL1", postUploadAction: "move", postUploadFolderId: "done" });

@@ -1,5 +1,5 @@
 import type { Video, Workflow } from "../../db/schema";
-import { errorMessage } from "../../errors";
+import { errorMessage, RetryableError } from "../../errors";
 import { logEvent } from "../../events";
 import { filterFailure, needsDuration } from "../../filters";
 import { isFfmpegAvailable, probeDuration } from "../../media/ffmpeg";
@@ -9,7 +9,7 @@ import { getSettings } from "../../settings";
 import { candidateOf, duplicateMessage, findDuplicateOf } from "../../video-scope";
 import { ignoreVideo, loadVideo, queueTransfer, setVideoStatus, updateVideo } from "../../videos";
 import type { JobPayloads } from "../queue";
-import type { JobContext } from "../runner";
+import { canRetry, type JobContext } from "../runner";
 
 /**
  * Prepares a stable video: applies the filters that need final data (size,
@@ -40,6 +40,10 @@ export async function generateMetadata({ videoId }: JobPayloads["generate_metada
   }
 
   const metadata = await buildMetadata(video, workflow, { useAi: workflow.useAi });
+  if (metadata.aiRetryable && canRetry(ctx)) {
+    // e.g. Gemini's free-tier rate limit: try again later instead of settling for the template.
+    throw new RetryableError(`La IA no está disponible por ahora: ${metadata.aiError}`, 60_000);
+  }
   if (metadata.aiError) {
     logEvent({ videoId }, `La IA no pudo generar el título, se usó la plantilla: ${metadata.aiError}`, "warn");
   }

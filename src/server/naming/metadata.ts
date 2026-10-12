@@ -4,7 +4,7 @@ import { es } from "date-fns/locale";
 import { and, desc, eq, isNotNull, ne } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { videos, type Video, type Workflow } from "../db/schema";
-import { errorMessage } from "../errors";
+import { errorMessage, RetryableError } from "../errors";
 import { getSettings } from "../settings";
 import { generateWithAi } from "./ai";
 import { parseTags, sanitizeDescription, sanitizeTags, sanitizeTitle } from "./sanitize";
@@ -17,6 +17,8 @@ export type GeneratedMetadata = {
   source: "template" | "ai";
   /** Set when AI was requested but the template had to be used. */
   aiError?: string;
+  /** The AI failure is temporary (rate limit, outage): worth retrying later. */
+  aiRetryable?: boolean;
 };
 
 export function templateVars(video: Video, timeZone: string): TemplateVars {
@@ -64,7 +66,6 @@ export async function buildMetadata(video: Video, workflow: Workflow, options: {
         template,
         recentTitles: recentTitles(video),
       },
-      settings.aiModel,
     );
     return {
       title: sanitizeTitle(ai.title, template.title),
@@ -73,6 +74,6 @@ export async function buildMetadata(video: Video, workflow: Workflow, options: {
       source: "ai",
     };
   } catch (error) {
-    return { ...template, source: "template", aiError: errorMessage(error) };
+    return { ...template, source: "template", aiError: errorMessage(error), aiRetryable: error instanceof RetryableError };
   }
 }

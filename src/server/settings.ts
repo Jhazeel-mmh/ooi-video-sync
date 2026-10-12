@@ -3,7 +3,10 @@ import { z } from "zod";
 import { getDb } from "./db/client";
 import { settings } from "./db/schema";
 
-export const AI_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"] as const;
+export const AI_PROVIDERS = ["auto", "claude", "gemini"] as const;
+export const CLAUDE_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"] as const;
+/** Both are on Gemini's free tier. */
+export const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite"] as const;
 
 export const settingsSchema = z.object({
   /** Daily YouTube Data API quota for the Google Cloud project. */
@@ -13,7 +16,11 @@ export const settingsSchema = z.object({
   /** Extra cap on uploads per day; 0 means "only limited by quota". */
   maxUploadsPerDay: z.coerce.number().int().min(0).default(0),
   maxParallelTransfers: z.coerce.number().int().min(1).max(4).default(1),
-  aiModel: z.enum(AI_MODELS).default("claude-opus-5-5"),
+  /** "auto": Claude when ANTHROPIC_API_KEY is set, otherwise Gemini. */
+  aiProvider: z.enum(AI_PROVIDERS).default("auto"),
+  /** Claude model (key kept as `aiModel` for existing installs). */
+  aiModel: z.enum(CLAUDE_MODELS).default("claude-opus-5-5"),
+  geminiModel: z.enum(GEMINI_MODELS).default("gemini-3.8-flash"),
   timeZone: z.string().min(1).default(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
   regionCode: z.string().length(2).default("US"),
 });

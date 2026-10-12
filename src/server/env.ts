@@ -16,6 +16,8 @@ const schema = z.object({
   GOOGLE_CLIENT_ID: optional,
   GOOGLE_CLIENT_SECRET: optional,
   ANTHROPIC_API_KEY: optional,
+  /** Gemini (Google AI Studio). Used for titles when there's no Claude key, and always for transcripts. */
+  GEMINI_API_KEY: optional,
   /** ffmpeg binary to use instead of the bundled `ffmpeg-static`. */
   FFMPEG_PATH: optional,
 });

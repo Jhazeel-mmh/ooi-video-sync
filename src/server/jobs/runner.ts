@@ -14,7 +14,15 @@ import { completeJob, failJob, rescheduleJob, type JobPayloads } from "./queue";
 export type JobContext = {
   /** Aborted when the worker shuts down; the job is requeued without counting the attempt. */
   signal: AbortSignal;
+  /** 1-based attempt number of this run. */
+  attempt: number;
+  maxAttempts: number;
 };
+
+/** Whether a temporary failure can still be retried by the queue. */
+export function canRetry(ctx: JobContext): boolean {
+  return ctx.attempt < ctx.maxAttempts;
+}
 
 const handlers: { [T in JobType]: (payload: JobPayloads[T], ctx: JobContext) => Promise<void> } = {
   scan_workflow: scanWorkflow,
@@ -24,8 +32,9 @@ const handlers: { [T in JobType]: (payload: JobPayloads[T], ctx: JobContext) => 
   sync_metadata: syncMetadata,
 };
 
-export async function runJob(job: Job, ctx: JobContext): Promise<void> {
+export async function runJob(job: Job, worker: { signal: AbortSignal }): Promise<void> {
   const handler = handlers[job.type] as (payload: unknown, ctx: JobContext) => Promise<void>;
+  const ctx: JobContext = { signal: worker.signal, attempt: job.attempts, maxAttempts: job.maxAttempts };
   try {
     await handler(job.payload, ctx);
     completeJob(job.id);

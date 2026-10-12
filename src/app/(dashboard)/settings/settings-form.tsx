@@ -10,14 +10,29 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { Settings } from "@/server/settings";
 import { saveSettings } from "./actions";
 
-const MODEL_LABELS: Record<Settings["aiModel"], string> = {
+const PROVIDER_LABELS: Record<Settings["aiProvider"], string> = {
+  auto: "Automático: Claude si hay API key, si no Gemini",
+  claude: "Siempre Claude",
+  gemini: "Siempre Gemini",
+};
+
+const CLAUDE_LABELS: Record<Settings["aiModel"], string> = {
   "claude-opus-5-5": "Claude Opus 5.5 (mejor calidad)",
   "claude-sonnet-5-5": "Claude Sonnet 5.5 (equilibrado)",
   "claude-haiku-5-5": "Claude Haiku 5.5 (más económico)",
 };
 
-export function SettingsForm({ initial, timeZones }: { initial: Settings; timeZones: string[] }) {
+const GEMINI_LABELS: Record<Settings["geminiModel"], string> = {
+  "gemini-3.8-flash": "Gemini 3.8 Flash (gratis, mejor calidad)",
+  "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite (gratis, más rápido)",
+};
+
+export type AiStatus = { hasClaudeKey: boolean; hasGeminiKey: boolean; activeProvider: string | null };
+
+export function SettingsForm({ initial, timeZones, ai }: { initial: Settings; timeZones: string[]; ai: AiStatus }) {
+  const [provider, setProvider] = useState(initial.aiProvider);
   const [model, setModel] = useState(initial.aiModel);
+  const [geminiModel, setGeminiModel] = useState(initial.geminiModel);
   const [pending, startTransition] = useTransition();
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -32,7 +47,9 @@ export function SettingsForm({ initial, timeZones }: { initial: Settings; timeZo
 
   return (
     <form onSubmit={onSubmit} className="space-y-6">
+      <input type="hidden" name="aiProvider" value={provider} />
       <input type="hidden" name="aiModel" value={model} />
+      <input type="hidden" name="geminiModel" value={geminiModel} />
       <Card>
         <CardHeader>
           <CardTitle>Cuota de YouTube</CardTitle>
@@ -71,23 +88,26 @@ export function SettingsForm({ initial, timeZones }: { initial: Settings; timeZo
 
       <Card>
         <CardHeader>
+          <CardTitle>Inteligencia artificial</CardTitle>
+          <CardDescription>
+            Claude: {ai.hasClaudeKey ? "configurado" : "falta ANTHROPIC_API_KEY"} · Gemini:{" "}
+            {ai.hasGeminiKey ? "configurado" : "falta GEMINI_API_KEY"} · En uso:{" "}
+            <span className="font-medium text-foreground">{ai.activeProvider ?? "ninguno (solo plantillas)"}</span>.
+            La capa gratuita de Gemini es gratis, pero Google usa lo que le envías para mejorar sus productos.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-3">
+          <OptionSelect label="Proveedor para títulos" value={provider} options={PROVIDER_LABELS} onChange={setProvider} />
+          <OptionSelect label="Modelo de Claude" value={model} options={CLAUDE_LABELS} onChange={setModel} />
+          <OptionSelect label="Modelo de Gemini" value={geminiModel} options={GEMINI_LABELS} onChange={setGeminiModel} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Nombrado</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-3">
-          <Field label="Modelo de IA">
-            <Select value={model} onValueChange={(v) => setModel(v as Settings["aiModel"])}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(MODEL_LABELS).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
           <Field label="Zona horaria" htmlFor="timeZone" hint="Para las fechas de {date} y la programación.">
             <Input id="timeZone" name="timeZone" list="time-zones" defaultValue={initial.timeZone} />
             <datalist id="time-zones">
@@ -106,6 +126,35 @@ export function SettingsForm({ initial, timeZones }: { initial: Settings; timeZo
         {pending ? "Guardando…" : "Guardar ajustes"}
       </Button>
     </form>
+  );
+}
+
+function OptionSelect<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: Record<T, string>;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <Field label={label}>
+      <Select value={value} onValueChange={(v) => onChange(v as T)}>
+        <SelectTrigger className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {(Object.entries(options) as [T, string][]).map(([key, text]) => (
+            <SelectItem key={key} value={key}>
+              {text}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Field>
   );
 }
 

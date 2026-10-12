@@ -440,14 +440,14 @@ export function WorkflowForm({
               />
             </Field>
             <SwitchField
-              label="Generar con IA (Claude)"
+              label="Generar con IA"
               checked={values.useAi}
               onChange={(v) => set("useAi", v)}
               disabled={!aiAvailable}
               hint={
                 aiAvailable
-                  ? "Claude propone título, descripción y etiquetas usando la plantilla como base. Si falla, se usa la plantilla."
-                  : "Define ANTHROPIC_API_KEY en .env para activar esta opción."
+                  ? "Claude o Gemini (según Ajustes) proponen título, descripción y etiquetas usando la plantilla como base. Si falla, se usa la plantilla."
+                  : "Define ANTHROPIC_API_KEY o GEMINI_API_KEY (gratis) en .env para activar esta opción."
               }
             />
             {values.useAi && (

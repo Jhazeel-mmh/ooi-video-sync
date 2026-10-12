@@ -1,6 +1,5 @@
 "use server";
 
-import { TZDate } from "@date-fns/tz";
 import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
@@ -10,6 +9,7 @@ import { getDb } from "@/server/db/client";
 import { accounts, POST_UPLOAD_ACTIONS, PRIVACY_STATUSES, WORKFLOW_MODES, workflows } from "@/server/db/schema";
 import { errorMessage } from "@/server/errors";
 import { logEvent } from "@/server/events";
+import { filterFormErrors, filtersFromForm, type FilterSettings } from "@/server/filters";
 import { scanNow } from "@/server/jobs/scheduler";
 import { getDefaultDriveId, getItem, isVideoItem, itemPath, listChildren } from "@/server/providers/onedrive";
 import { listCategories, listPlaylists } from "@/server/providers/youtube";
@@ -29,8 +29,16 @@ const workflowInput = z
     folderId: z.string().min(1, "Elige una carpeta de OneDrive"),
     folderPath: z.string().min(1),
     recursive: checkbox,
-    videoScope: z.enum(["new", "all", "since"]),
-    sinceDate: z.string().regex(/^(\d{4}-\d{2}-\d{2})?$/, "Fecha inválida"),
+    includeExisting: checkbox,
+    sinceDate: z.string(),
+    untilDate: z.string(),
+    minSizeMb: z.string(),
+    maxSizeMb: z.string(),
+    minDurationMin: z.string(),
+    maxDurationMin: z.string(),
+    nameInclude: z.string().max(500),
+    nameExclude: z.string().max(500),
+    skipDuplicates: checkbox,
     youtubeAccountId: z.coerce.number().int().positive("Elige un canal de YouTube"),
     mode: z.enum(WORKFLOW_MODES),
     titleTemplate: z.string().trim().min(1, "La plantilla de título no puede quedar vacía").max(500),
@@ -49,9 +57,10 @@ const workflowInput = z
     pollIntervalMin: z.coerce.number().int().min(1, "Mínimo 1 minuto").max(1440),
     stableMinutes: z.coerce.number().int().min(0).max(1440),
   })
-  .refine((v) => v.videoScope !== "since" || v.sinceDate, {
-    path: ["sinceDate"],
-    message: "Elige desde qué fecha",
+  .superRefine((v, ctx) => {
+    for (const [path, message] of Object.entries(filterFormErrors(v))) {
+      ctx.addIssue({ code: "custom", path: [path], message });
+    }
   })
   .refine((v) => v.postUploadAction !== "move" || v.postUploadFolderId, {
     path: ["postUploadFolderId"],
@@ -70,12 +79,24 @@ export async function saveWorkflow(workflowId: number | null, formData: FormData
   if (!parsed.success) {
     return { error: "Revisa los campos marcados", fieldErrors: z.flattenError(parsed.error).fieldErrors };
   }
-  const { videoScope, sinceDate, ...rest } = parsed.data;
-  const values = {
-    ...rest,
-    includeExisting: videoScope !== "new",
-    sinceDate: videoScope === "since" ? startOfDayIn(sinceDate, getSettings().timeZone) : null,
-  };
+  const {
+    includeExisting,
+    sinceDate,
+    untilDate,
+    minSizeMb,
+    maxSizeMb,
+    minDurationMin,
+    maxDurationMin,
+    nameInclude,
+    nameExclude,
+    skipDuplicates,
+    ...rest
+  } = parsed.data;
+  const filters = filtersFromForm(
+    { includeExisting, sinceDate, untilDate, minSizeMb, maxSizeMb, minDurationMin, maxDurationMin, nameInclude, nameExclude, skipDuplicates },
+    getSettings().timeZone,
+  );
+  const values = { ...rest, ...filters };
   const db = getDb();
 
   const onedrive = db.select().from(accounts).where(eq(accounts.id, values.onedriveAccountId)).get();
@@ -87,16 +108,10 @@ export async function saveWorkflow(workflowId: number | null, formData: FormData
   if (workflowId) {
     const previous = db.select().from(workflows).where(eq(workflows.id, workflowId)).get();
     db.update(workflows).set(values).where(eq(workflows.id, workflowId)).run();
-    const scopeChanged =
-      previous?.includeExisting !== values.includeExisting ||
-      previous?.sinceDate?.getTime() !== values.sinceDate?.getTime();
-    if (scopeChanged) {
+    if (previous && filtersChanged(previous, filters)) {
       const { restored, skipped } = reapplyVideoScope(workflowId);
       if (restored || skipped) {
-        logEvent(
-          { workflowId },
-          `Cambió qué videos se procesan: ${restored} recuperado(s) y ${skipped} excluido(s)`,
-        );
+        logEvent({ workflowId }, `Cambiaron los filtros: ${restored} video(s) recuperado(s) y ${skipped} excluido(s)`);
       }
     }
   } else {
@@ -105,10 +120,12 @@ export async function saveWorkflow(workflowId: number | null, formData: FormData
   redirect("/workflows");
 }
 
-/** `yyyy-MM-dd` → midnight of that day in `timeZone`. */
-function startOfDayIn(date: string, timeZone: string): Date {
-  const [y, m, d] = date.split("-").map(Number);
-  return new Date(new TZDate(y, m - 1, d, 0, 0, 0, timeZone).getTime());
+function filtersChanged(previous: FilterSettings, next: FilterSettings): boolean {
+  return (Object.keys(next) as (keyof FilterSettings)[]).some((key) => {
+    const a = previous[key];
+    const b = next[key];
+    return a instanceof Date || b instanceof Date ? (a as Date | null)?.getTime() !== (b as Date | null)?.getTime() : a !== b;
+  });
 }
 
 export async function deleteWorkflow(workflowId: number): Promise<ActionResult> {

@@ -1,5 +1,3 @@
-import { TZDate } from "@date-fns/tz";
-import { format } from "date-fns";
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
@@ -7,6 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getDb } from "@/server/db/client";
 import { workflows } from "@/server/db/schema";
+import { filtersToForm } from "@/server/filters";
 import { requireAdmin } from "@/server/session";
 import { workflowFormProps } from "../form-props";
 import { WorkflowForm } from "../workflow-form";
@@ -38,15 +37,15 @@ async function EditWorkflow({ params }: { params: PageProps<"/workflows/[id]">["
     updatedAt: _u,
     lastScannedAt: _l,
     lastScanError: _e,
-    includeExisting,
-    sinceDate,
+    sinceDate: _s,
+    untilDate: _t,
+    minSizeBytes: _a,
+    maxSizeBytes: _b,
+    minDurationSec: _m,
+    maxDurationSec: _x,
     ...rest
   } = workflow;
   const props = workflowFormProps();
-  const initial = {
-    ...rest,
-    videoScope: sinceDate ? ("since" as const) : includeExisting ? ("all" as const) : ("new" as const),
-    sinceDate: sinceDate ? format(new TZDate(sinceDate.getTime(), props.timeZone), "yyyy-MM-dd") : "",
-  };
+  const initial = { ...rest, ...filtersToForm(workflow, props.timeZone) };
   return <WorkflowForm workflowId={workflowId} initial={initial} {...props} />;
 }

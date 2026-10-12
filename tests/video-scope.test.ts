@@ -61,7 +61,7 @@ describe("since date", () => {
     const v = byName(wf.id);
     expect(v["VID_20260430_200000.mp4"]).toMatchObject({
       status: "ignored",
-      ignoredReason: "before_since",
+      ignoredReason: "filtered",
       error: "Grabado antes del 01/05/2026",
     });
     for (const name of ["VID_20260501_000500.mp4", "Misa 2026-06-07.mov", "sin fecha.mp4"]) {
@@ -75,7 +75,7 @@ describe("since date", () => {
     await scanWorkflow({ workflowId: wf.id });
     serve([file("late", "VID_20251224_100000.mp4")]);
     await scanWorkflow({ workflowId: wf.id });
-    expect(byName(wf.id)["VID_20251224_100000.mp4"]).toMatchObject({ status: "ignored", ignoredReason: "before_since" });
+    expect(byName(wf.id)["VID_20251224_100000.mp4"]).toMatchObject({ status: "ignored", ignoredReason: "filtered" });
   });
 });
 
@@ -117,7 +117,7 @@ describe("reapplyVideoScope", () => {
     expect(reapplyVideoScope(wf.id)).toEqual({ restored: 0, skipped: 3 });
     const v = byName(wf.id);
     expect(v["Misa 2026-06-07.mov"].status).toBe("pending_review");
-    expect(v["sin fecha.mp4"]).toMatchObject({ status: "ignored", ignoredReason: "before_since", error: "Grabado antes del 01/06/2026" });
+    expect(v["sin fecha.mp4"]).toMatchObject({ status: "ignored", ignoredReason: "filtered", error: "Grabado antes del 01/06/2026" });
   });
 
   it("does nothing for 'only new videos'", async () => {
@@ -125,5 +125,33 @@ describe("reapplyVideoScope", () => {
     serve(FOLDER);
     await scanWorkflow({ workflowId: wf.id });
     expect(reapplyVideoScope(wf.id)).toEqual({ restored: 0, skipped: 0 });
+  });
+});
+
+describe("scan with several filters", () => {
+  it("stores the content hash and gives 'already there' precedence over filters on the first scan", async () => {
+    const wf = createWorkflow({ includeExisting: false, maxSizeBytes: 10 });
+    serve([{ ...file("h", "VID_20260601_100000.mp4"), file: { mimeType: "video/mp4", hashes: { quickXorHash: "qx==" } } }]);
+    await scanWorkflow({ workflowId: wf.id });
+    expect(byName(wf.id)["VID_20260601_100000.mp4"]).toMatchObject({ contentHash: "qx==", ignoredReason: "existing" });
+  });
+
+  it("combines date, size and name filters on later arrivals", async () => {
+    const wf = createWorkflow({ includeExisting: true, sinceDate: MAY_1, maxSizeBytes: 50, nameExclude: "prueba" });
+    serve([
+      { ...file("ok", "VID_20260601_100000.mp4"), size: 40 },
+      { ...file("big", "VID_20260602_100000.mp4"), size: 60 },
+      { ...file("test", "Prueba 2026-06-03.mp4"), size: 10 },
+    ]);
+    await scanWorkflow({ workflowId: wf.id });
+    const v = byName(wf.id);
+    expect(v["VID_20260601_100000.mp4"].status).toBe("discovered");
+    expect(v["VID_20260602_100000.mp4"]).toMatchObject({ ignoredReason: "filtered", error: "Pesa más de 50 B" });
+    expect(v["Prueba 2026-06-03.mp4"]).toMatchObject({ ignoredReason: "filtered", error: "El nombre contiene «prueba»" });
+
+    // Relaxing the size filter brings the big one back.
+    getDb().update(workflows).set({ maxSizeBytes: null }).where(eq(workflows.id, wf.id)).run();
+    expect(reapplyVideoScope(wf.id)).toEqual({ restored: 1, skipped: 0 });
+    expect(byName(wf.id)["VID_20260602_100000.mp4"].status).toBe("discovered");
   });
 });

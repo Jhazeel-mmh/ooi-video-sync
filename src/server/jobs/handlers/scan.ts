@@ -4,9 +4,9 @@ import { videos, workflows } from "../../db/schema";
 import { errorMessage } from "../../errors";
 import { logEvent } from "../../events";
 import { recordingDate } from "../../naming/template";
-import { isVideoItem, listFiles, parentPathOf } from "../../providers/onedrive";
+import { contentHashOf, isVideoItem, listFiles, parentPathOf } from "../../providers/onedrive";
 import { getSettings } from "../../settings";
-import { ignoreMessage, skipReason } from "../../video-scope";
+import { MISSING_MESSAGE, scanDecision } from "../../video-scope";
 import { nextSequence, queueMetadata } from "../../videos";
 import type { JobPayloads } from "../queue";
 
@@ -45,8 +45,19 @@ export async function scanWorkflow({ workflowId }: JobPayloads["scan_workflow"])
 
     if (!previous) {
       const sourceCreatedAt = new Date(item.fileSystemInfo?.createdDateTime ?? item.createdDateTime);
-      const reason = skipReason(workflow, recordingDate({ name: item.name, sourceCreatedAt, createdAt: now }, timeZone), firstScan);
-      const status = reason ? "ignored" : "discovered";
+      // Duration is often missing here; the duration filter is checked again before naming.
+      const decision = scanDecision(
+        workflow,
+        {
+          name: item.name,
+          size,
+          durationMs: item.video?.duration ?? null,
+          recordedAt: recordingDate({ name: item.name, sourceCreatedAt, createdAt: now }, timeZone),
+        },
+        firstScan,
+        timeZone,
+      );
+      const status = decision ? "ignored" : "discovered";
       const inserted = db
         .insert(videos)
         .values({
@@ -58,14 +69,15 @@ export async function scanWorkflow({ workflowId }: JobPayloads["scan_workflow"])
           size,
           mimeType: item.file?.mimeType ?? null,
           eTag: item.eTag ?? null,
+          contentHash: contentHashOf(item),
           sourceCreatedAt,
           sourceModifiedAt: modifiedAt,
           durationMs: item.video?.duration ?? null,
           lastSeenSize: size,
           stableSince: modifiedAt,
           status,
-          ignoredReason: reason,
-          error: reason ? ignoreMessage(reason, workflow, timeZone) : null,
+          ignoredReason: decision?.reason ?? null,
+          error: decision?.message ?? null,
         })
         .returning({ id: videos.id })
         .get();
@@ -73,7 +85,14 @@ export async function scanWorkflow({ workflowId }: JobPayloads["scan_workflow"])
         discovered += 1;
         logEvent({ videoId: inserted.id, workflowId }, `Detectado en OneDrive: ${item.name}`);
       }
-    } else if (previous.status === "discovered" && (previous.lastSeenSize !== size || previous.eTag !== item.eTag)) {
+      continue;
+    }
+
+    if (previous.contentHash === null && contentHashOf(item)) {
+      // Videos found before hashes were stored: fill it in for duplicate detection.
+      db.update(videos).set({ contentHash: contentHashOf(item) }).where(eq(videos.id, previous.id)).run();
+    }
+    if (previous.status === "discovered" && (previous.lastSeenSize !== size || previous.eTag !== item.eTag)) {
       // Still changing: restart the stability timer.
       db.update(videos)
         .set({
@@ -81,6 +100,7 @@ export async function scanWorkflow({ workflowId }: JobPayloads["scan_workflow"])
           size,
           lastSeenSize: size,
           eTag: item.eTag ?? null,
+          contentHash: contentHashOf(item),
           sourceModifiedAt: modifiedAt,
           durationMs: item.video?.duration ?? previous.durationMs,
           stableSince: now,
@@ -95,10 +115,10 @@ export async function scanWorkflow({ workflowId }: JobPayloads["scan_workflow"])
   for (const video of known.values()) {
     if ((video.status === "discovered" || video.status === "pending_review") && !present.has(video.itemId)) {
       db.update(videos)
-        .set({ status: "ignored", ignoredReason: "missing", error: ignoreMessage("missing", workflow, timeZone) })
+        .set({ status: "ignored", ignoredReason: "missing", error: MISSING_MESSAGE })
         .where(eq(videos.id, video.id))
         .run();
-      logEvent({ videoId: video.id, workflowId }, "Ya no está en la carpeta de OneDrive; se ignora", "warn");
+      logEvent({ videoId: video.id, workflowId }, `${MISSING_MESSAGE}; se ignora`, "warn");
     }
   }
 

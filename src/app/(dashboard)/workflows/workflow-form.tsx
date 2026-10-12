@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { PrivacyStatus } from "@/server/db/schema";
+import { describeFilters, filtersFromForm, type FilterFormValues } from "@/server/filters";
 import { parseTags, sanitizeDescription, sanitizeTags, sanitizeTitle } from "@/server/naming/sanitize";
 import { dateFromFilename, renderTemplate, TEMPLATE_VARIABLES } from "@/server/naming/template";
 import { loadYoutubeOptions, saveWorkflow, type WorkflowFormState, type YoutubeOptions } from "./actions";
@@ -19,7 +20,7 @@ import { FolderPicker, type PickedFolder } from "./folder-picker";
 
 export type AccountOption = { id: number; name: string; needsReauth: boolean };
 
-export type WorkflowFormValues = {
+export type WorkflowFormValues = FilterFormValues & {
   name: string;
   enabled: boolean;
   onedriveAccountId: number | null;
@@ -27,10 +28,6 @@ export type WorkflowFormValues = {
   folderId: string;
   folderPath: string;
   recursive: boolean;
-  /** Which videos to process: only new arrivals, everything, or recorded since `sinceDate`. */
-  videoScope: "new" | "all" | "since";
-  /** `yyyy-MM-dd` in the app time zone, or "". */
-  sinceDate: string;
   youtubeAccountId: number | null;
   mode: "auto" | "review";
   titleTemplate: string;
@@ -49,12 +46,6 @@ export type WorkflowFormValues = {
   pollIntervalMin: number;
   stableMinutes: number;
   counter: number;
-};
-
-const VIDEO_SCOPE_HINTS: Record<WorkflowFormValues["videoScope"], string> = {
-  new: "Los videos que ya están en la carpeta al crear el workflow se ignoran.",
-  all: "También se procesan los videos que ya están en la carpeta.",
-  since: "Se procesan los grabados desde esa fecha, también los que ya están en la carpeta.",
 };
 
 const PRIVACY_LABELS: Record<PrivacyStatus, string> = {
@@ -119,6 +110,8 @@ export function WorkflowForm({
     };
   }, [sampleName, values.folderPath, values.counter, values.titleTemplate, values.descriptionTemplate, values.tagsTemplate, timeZone]);
 
+  const filterSummary = useMemo(() => describeFilters(filtersFromForm(values, timeZone), timeZone), [values, timeZone]);
+
   const folder: PickedFolder | null = values.folderId
     ? { driveId: values.driveId, folderId: values.folderId, folderPath: values.folderPath }
     : null;
@@ -160,8 +153,8 @@ export function WorkflowForm({
           "postUploadFolderPath",
           "enabled",
           "recursive",
-          "videoScope",
-          "sinceDate",
+          "includeExisting",
+          "skipDuplicates",
           "madeForKids",
           "useAi",
         ] as const
@@ -235,35 +228,16 @@ export function WorkflowForm({
             />
           </Field>
           <SwitchField label="Incluir subcarpetas" checked={values.recursive} onChange={(v) => set("recursive", v)} />
-          <Field
-            label="Qué videos procesar"
-            errors={errors.videoScope}
+          <SwitchField
+            label="Procesar los videos que ya están en la carpeta"
+            checked={values.includeExisting}
+            onChange={(v) => set("includeExisting", v)}
             hint={
-              VIDEO_SCOPE_HINTS[values.videoScope] +
-              (workflowId !== null ? " Al guardar un cambio aquí se revisan de nuevo los videos que se ignoraron por esta regla." : "")
+              workflowId === null
+                ? "Si está apagado, solo se procesan los que lleguen después de crear el workflow."
+                : "Si lo cambias, al guardar se revisan de nuevo los videos que se ignoraron por esta regla."
             }
-          >
-            <Select value={values.videoScope} onValueChange={(v) => set("videoScope", v as WorkflowFormValues["videoScope"])}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="new">Solo los que lleguen a partir de ahora</SelectItem>
-                <SelectItem value="all">Todos los de la carpeta</SelectItem>
-                <SelectItem value="since">Los grabados desde una fecha</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-          {values.videoScope === "since" && (
-            <Field
-              label="Grabados desde"
-              htmlFor="sinceDate"
-              errors={errors.sinceDate}
-              hint="Se toma la fecha del nombre del archivo (p. ej. VID_20260510_…) y, si no trae, la fecha de creación del archivo."
-            >
-              <Input id="sinceDate" type="date" value={values.sinceDate} onChange={(e) => set("sinceDate", e.target.value)} />
-            </Field>
-          )}
+          />
           <Field
             label="Revisar cada (minutos)"
             htmlFor="pollIntervalMin"
@@ -293,6 +267,55 @@ export function WorkflowForm({
               onChange={(e) => set("stableMinutes", Number(e.target.value))}
             />
           </Field>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Filtros</CardTitle>
+          <CardDescription>
+            Opcionales y acumulables: un video se procesa solo si cumple todos los que llenes. La fecha de grabación
+            sale del nombre del archivo (p. ej. VID_20260510_…) o, si no la trae, de su fecha de creación.
+            {workflowId !== null && " Al guardar cambios aquí se revisan de nuevo los videos ignorados por los filtros."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          <RangeField label="Grabados" errors={[...(errors.sinceDate ?? []), ...(errors.untilDate ?? [])]}>
+            <Input name="sinceDate" type="date" aria-label="Desde" value={values.sinceDate} onChange={(e) => set("sinceDate", e.target.value)} />
+            <span className="text-sm text-muted-foreground">a</span>
+            <Input name="untilDate" type="date" aria-label="Hasta" value={values.untilDate} onChange={(e) => set("untilDate", e.target.value)} />
+          </RangeField>
+          <RangeField label="Tamaño (MB)" errors={[...(errors.minSizeMb ?? []), ...(errors.maxSizeMb ?? [])]}>
+            <Input name="minSizeMb" inputMode="decimal" placeholder="Mínimo" value={values.minSizeMb} onChange={(e) => set("minSizeMb", e.target.value)} />
+            <span className="text-sm text-muted-foreground">a</span>
+            <Input name="maxSizeMb" inputMode="decimal" placeholder="Máximo" value={values.maxSizeMb} onChange={(e) => set("maxSizeMb", e.target.value)} />
+          </RangeField>
+          <RangeField
+            label="Duración (minutos)"
+            errors={[...(errors.minDurationMin ?? []), ...(errors.maxDurationMin ?? [])]}
+            hint="Si OneDrive no informa la duración, se mide con ffmpeg antes de decidir."
+          >
+            <Input name="minDurationMin" inputMode="decimal" placeholder="Mínimo" value={values.minDurationMin} onChange={(e) => set("minDurationMin", e.target.value)} />
+            <span className="text-sm text-muted-foreground">a</span>
+            <Input name="maxDurationMin" inputMode="decimal" placeholder="Máximo" value={values.maxDurationMin} onChange={(e) => set("maxDurationMin", e.target.value)} />
+          </RangeField>
+          <div />
+          <Field label="El nombre contiene alguna de" htmlFor="nameInclude" errors={errors.nameInclude} hint="Palabras separadas por coma; no distingue mayúsculas ni acentos.">
+            <Input id="nameInclude" name="nameInclude" placeholder="misa, culto" value={values.nameInclude} onChange={(e) => set("nameInclude", e.target.value)} />
+          </Field>
+          <Field label="El nombre no contiene ninguna de" htmlFor="nameExclude" errors={errors.nameExclude}>
+            <Input id="nameExclude" name="nameExclude" placeholder="prueba, borrador" value={values.nameExclude} onChange={(e) => set("nameExclude", e.target.value)} />
+          </Field>
+          <SwitchField
+            label="Omitir duplicados"
+            checked={values.skipDuplicates}
+            onChange={(v) => set("skipDuplicates", v)}
+            hint="Si el mismo archivo ya se subió o está en cola (en cualquier workflow), no se vuelve a subir."
+          />
+          <p className="text-sm text-muted-foreground md:col-span-2">
+            <span className="font-medium text-foreground">Se procesarán los videos: </span>
+            {filterSummary.length > 0 ? filterSummary.join(", ") : "todos"}.
+          </p>
         </CardContent>
       </Card>
 
@@ -525,6 +548,31 @@ function Field({
     <div className="space-y-2">
       <Label htmlFor={htmlFor}>{label}</Label>
       {children}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {errors?.map((e) => (
+        <p key={e} className="text-sm text-destructive">
+          {e}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function RangeField({
+  label,
+  errors,
+  hint,
+  children,
+}: {
+  label: string;
+  errors?: string[];
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <div className="flex items-center gap-2">{children}</div>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       {errors?.map((e) => (
         <p key={e} className="text-sm text-destructive">

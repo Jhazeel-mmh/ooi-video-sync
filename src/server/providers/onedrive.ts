@@ -14,7 +14,7 @@ export type DriveItem = {
   eTag?: string;
   createdDateTime: string;
   lastModifiedDateTime: string;
-  file?: { mimeType?: string };
+  file?: { mimeType?: string; hashes?: { quickXorHash?: string; sha1Hash?: string; sha256Hash?: string } };
   folder?: { childCount: number };
   video?: { duration?: number };
   fileSystemInfo?: { createdDateTime?: string; lastModifiedDateTime?: string };
@@ -27,6 +27,12 @@ const ITEM_FIELDS =
 const VIDEO_EXTENSIONS = new Set([
   "mp4", "mov", "m4v", "avi", "wmv", "mkv", "webm", "flv", "3gp", "3g2", "mpg", "mpeg", "mts", "m2ts", "ts", "ogv",
 ]);
+
+/** Hash that identifies the file content (for duplicate detection). */
+export function contentHashOf(item: DriveItem): string | null {
+  const hashes = item.file?.hashes;
+  return hashes?.quickXorHash ?? hashes?.sha1Hash ?? hashes?.sha256Hash ?? null;
+}
 
 export function isVideoItem(item: DriveItem): boolean {
   if (!item.file) return false;
@@ -135,6 +141,24 @@ export async function moveItem(accountId: number, driveId: string, itemId: strin
 }
 
 /**
+ * Short-lived pre-authenticated URL of the file's content (about an hour).
+ * Graph answers with a 302; we follow it ourselves so the bearer token isn't
+ * forwarded to the storage host. Also usable directly by ffmpeg.
+ */
+export async function getDownloadUrl(accountId: number, driveId: string, itemId: string, signal?: AbortSignal): Promise<string> {
+  const redirect = await authedFetch(accountId, `${GRAPH}/drives/${driveId}/items/${itemId}/content`, {
+    redirect: "manual",
+    signal,
+  });
+  const location = redirect.headers.get("location");
+  if (!location) {
+    if (!redirect.ok) throw await graphError(redirect, "descargar");
+    throw new RetryableError("OneDrive no devolvió la URL de descarga");
+  }
+  return location;
+}
+
+/**
  * Downloads an item into `destPath`, resuming from `offset` when the server
  * honours the Range header. Returns the final size on disk.
  */
@@ -145,18 +169,7 @@ export async function downloadItem(
   destPath: string,
   options: { offset: number; signal?: AbortSignal; onProgress?: (bytesOnDisk: number) => void },
 ): Promise<number> {
-  // Graph answers with a 302 to a pre-authenticated URL; follow it ourselves so
-  // the bearer token isn't forwarded to the storage host.
-  const redirect = await authedFetch(accountId, `${GRAPH}/drives/${driveId}/items/${itemId}/content`, {
-    redirect: "manual",
-    signal: options.signal,
-  });
-  const location = redirect.headers.get("location");
-  if (!location) {
-    if (!redirect.ok) throw await graphError(redirect, "descargar");
-    throw new RetryableError("OneDrive no devolvió la URL de descarga");
-  }
-
+  const location = await getDownloadUrl(accountId, driveId, itemId, options.signal);
   let offset = options.offset;
   let res: Response;
   try {

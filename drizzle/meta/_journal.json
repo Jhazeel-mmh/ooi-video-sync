@@ -15,6 +15,13 @@
       "when": 1791786976309,
       "tag": "0001_videos_desde_fecha",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791788525857,
+      "tag": "0002_filtros",
+      "breakpoints": true
     }
   ]
 }

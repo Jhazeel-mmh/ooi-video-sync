@@ -56,8 +56,21 @@ export const workflows = sqliteTable("workflows", {
   recursive: integer({ mode: "boolean" }).notNull().default(false),
   /** When false (and no `sinceDate`), videos already in the folder on the first scan are marked `ignored`. */
   includeExisting: integer({ mode: "boolean" }).notNull().default(false),
-  /** Only videos recorded on or after this instant are processed (start of day in the app time zone). */
+  // Filters: all optional and cumulative (a video must pass every one that is set).
+  /** Only videos recorded on or after this instant (start of day in the app time zone). */
   sinceDate: integer({ mode: "timestamp_ms" }),
+  /** Exclusive upper bound: start of the day after the chosen "until" date. */
+  untilDate: integer({ mode: "timestamp_ms" }),
+  minSizeBytes: integer(),
+  maxSizeBytes: integer(),
+  minDurationSec: integer(),
+  maxDurationSec: integer(),
+  /** Comma-separated words; the file name must contain at least one. */
+  nameInclude: text().notNull().default(""),
+  /** Comma-separated words; the file name must contain none. */
+  nameExclude: text().notNull().default(""),
+  /** Skip files whose content was already uploaded or queued by any workflow. */
+  skipDuplicates: integer({ mode: "boolean" }).notNull().default(true),
   youtubeAccountId: integer()
     .notNull()
     .references(() => accounts.id),
@@ -100,7 +113,7 @@ export type VideoStatus = (typeof VIDEO_STATUSES)[number];
 export const TITLE_SOURCES = ["template", "ai", "manual"] as const;
 
 /** Why a video is `ignored`; only the automatic reasons are re-evaluated when the workflow changes. */
-export const IGNORE_REASONS = ["existing", "before_since", "missing", "manual"] as const;
+export const IGNORE_REASONS = ["existing", "filtered", "duplicate", "missing", "manual"] as const;
 export type IgnoreReason = (typeof IGNORE_REASONS)[number];
 
 export const videos = sqliteTable(
@@ -118,6 +131,8 @@ export const videos = sqliteTable(
     size: integer().notNull(),
     mimeType: text(),
     eTag: text(),
+    /** OneDrive content hash (quickXorHash, or sha1 on personal drives) to spot duplicates. */
+    contentHash: text(),
     sourceCreatedAt: integer({ mode: "timestamp_ms" }),
     sourceModifiedAt: integer({ mode: "timestamp_ms" }),
     durationMs: integer(),
@@ -145,6 +160,7 @@ export const videos = sqliteTable(
   (t) => [
     uniqueIndex("videos_workflow_item_idx").on(t.workflowId, t.itemId),
     index("videos_status_idx").on(t.status),
+    index("videos_content_hash_idx").on(t.contentHash),
   ],
 );
 

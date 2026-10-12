@@ -15,7 +15,8 @@ import {
 } from "../../providers/youtube";
 import { canStartUpload, nextQuotaReset, recordQuota } from "../../quota";
 import { getSettings } from "../../settings";
-import { loadVideo, setVideoStatus, updateVideo, youtubeMetadata } from "../../videos";
+import { duplicateMessage, findDuplicateOf } from "../../video-scope";
+import { ignoreVideo, loadVideo, setVideoStatus, updateVideo, youtubeMetadata } from "../../videos";
 import { enqueue, type JobPayloads } from "../queue";
 import type { JobContext } from "../runner";
 
@@ -64,6 +65,14 @@ export async function transferVideo({ videoId }: JobPayloads["transfer_video"], 
   if (!loaded || !TRANSFERABLE.has(loaded.video.status)) return;
   let { video } = loaded;
   const { workflow } = loaded;
+
+  // Two copies of the same file may have been approved at the same time.
+  const duplicate = !video.youtubeVideoId && !video.uploadSessionUrl && workflow.skipDuplicates ? findDuplicateOf(video) : null;
+  if (duplicate) {
+    ignoreVideo(video, "duplicate", duplicateMessage(duplicate));
+    logEvent({ videoId }, `Se ignora por duplicado: ${duplicateMessage(duplicate)}`);
+    return;
+  }
 
   if (video.youtubeVideoId) {
     // Already uploaded; only the follow-up is missing.

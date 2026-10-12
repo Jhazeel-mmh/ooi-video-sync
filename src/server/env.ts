@@ -16,6 +16,8 @@ const schema = z.object({
   GOOGLE_CLIENT_ID: optional,
   GOOGLE_CLIENT_SECRET: optional,
   ANTHROPIC_API_KEY: optional,
+  /** ffmpeg binary to use instead of the bundled `ffmpeg-static`. */
+  FFMPEG_PATH: optional,
 });
 
 export type Env = z.infer<typeof schema>;

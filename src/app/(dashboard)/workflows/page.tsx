@@ -8,9 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatDate, timeAgo } from "@/lib/format";
+import { timeAgo } from "@/lib/format";
 import { getDb } from "@/server/db/client";
 import { accounts, videos, workflows } from "@/server/db/schema";
+import { describeFilters } from "@/server/filters";
 import { requireAdmin } from "@/server/session";
 import { getSettings } from "@/server/settings";
 import { deleteWorkflow, scanWorkflowNow, setWorkflowEnabled } from "./actions";
@@ -96,8 +97,8 @@ async function WorkflowList() {
                   <div className="truncate">{wf.folderPath}</div>
                   <div className="truncate text-xs text-muted-foreground">
                     {onedrive?.displayName}
-                    {wf.sinceDate && ` · grabados desde ${formatDate(wf.sinceDate, timeZone)}`}
                   </div>
+                  <div className="line-clamp-2 text-xs text-muted-foreground">{describeFilters(wf, timeZone).join(", ")}</div>
                 </TableCell>
                 <TableCell className="max-w-48 truncate">{youtube?.displayName}</TableCell>
                 <TableCell>

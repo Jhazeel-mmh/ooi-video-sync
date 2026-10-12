@@ -1,7 +1,10 @@
 ignoredBuiltDependencies:
+  - "@google/genai"
+  - protobufjs
   - sharp
   - unrs-resolver
 
 onlyBuiltDependencies:
   - better-sqlite3
   - esbuild
+  - ffmpeg-static

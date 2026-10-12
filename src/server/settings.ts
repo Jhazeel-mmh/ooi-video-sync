@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "./db/client";
 import { settings } from "./db/schema";
@@ -35,4 +36,20 @@ export function updateSettings(values: Partial<Settings>): void {
       tx.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
     }
   });
+}
+
+const WORKER_HEARTBEAT_KEY = "worker.heartbeat";
+
+export function recordWorkerHeartbeat(): void {
+  const value = new Date().toISOString();
+  getDb()
+    .insert(settings)
+    .values({ key: WORKER_HEARTBEAT_KEY, value })
+    .onConflictDoUpdate({ target: settings.key, set: { value } })
+    .run();
+}
+
+export function lastWorkerHeartbeat(): Date | null {
+  const row = getDb().select().from(settings).where(eq(settings.key, WORKER_HEARTBEAT_KEY)).get();
+  return typeof row?.value === "string" ? new Date(row.value) : null;
 }

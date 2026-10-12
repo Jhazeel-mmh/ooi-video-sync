@@ -7,6 +7,7 @@ import { exchangeCode, isProvider } from "@/server/providers/oauth";
 import { fetchMicrosoftProfile } from "@/server/providers/onedrive";
 import { fetchMyChannel } from "@/server/providers/youtube";
 import { requireAdmin } from "@/server/session";
+import { retryAuthFailures } from "@/server/videos";
 
 export async function GET(req: NextRequest, ctx: RouteContext<"/api/auth/[provider]/callback">) {
   await requireAdmin();
@@ -25,12 +26,13 @@ export async function GET(req: NextRequest, ctx: RouteContext<"/api/auth/[provid
     }
 
     const tokens = await exchangeCode(provider, code, pending.verifier);
+    let account;
     if (provider === "microsoft") {
       const profile = await fetchMicrosoftProfile(tokens.accessToken);
-      upsertAccount({ provider, externalId: profile.id, displayName: profile.displayName, email: profile.email, tokens });
+      account = upsertAccount({ provider, externalId: profile.id, displayName: profile.displayName, email: profile.email, tokens });
     } else {
       const channel = await fetchMyChannel(tokens.accessToken);
-      upsertAccount({
+      account = upsertAccount({
         provider,
         externalId: channel.id,
         displayName: channel.title,
@@ -38,6 +40,8 @@ export async function GET(req: NextRequest, ctx: RouteContext<"/api/auth/[provid
         tokens,
       });
     }
+    // Videos that failed while the account was disconnected pick up where they stopped.
+    retryAuthFailures(account.id);
     target = `/accounts?connected=${provider}`;
   } catch (error) {
     target = `/accounts?error=${encodeURIComponent(errorMessage(error))}`;

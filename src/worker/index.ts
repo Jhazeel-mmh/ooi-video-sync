@@ -7,7 +7,7 @@ import { errorMessage } from "../server/errors";
 import { claimNext, heartbeat, pruneJobs, releaseStaleJobs, resetRunningJobs } from "../server/jobs/queue";
 import { runJob } from "../server/jobs/runner";
 import { enqueueDueScans } from "../server/jobs/scheduler";
-import { getSettings } from "../server/settings";
+import { getSettings, recordWorkerHeartbeat } from "../server/settings";
 
 const WORKER_ID = `${hostname()}:${process.pid}`;
 const IDLE_POLL_MS = 2_000;
@@ -57,6 +57,7 @@ function fillSlots() {
 
 function schedulerTick() {
   try {
+    recordWorkerHeartbeat();
     enqueueDueScans();
     const released = releaseStaleJobs(STALE_AFTER_MS);
     if (released > 0) log(`${released} job(s) sin latido devueltos a la cola`);

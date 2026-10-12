@@ -3,7 +3,10 @@ import { getDb } from "../../db/client";
 import { videos, workflows } from "../../db/schema";
 import { errorMessage } from "../../errors";
 import { logEvent } from "../../events";
+import { recordingDate } from "../../naming/template";
 import { isVideoItem, listFiles, parentPathOf } from "../../providers/onedrive";
+import { getSettings } from "../../settings";
+import { ignoreMessage, skipReason } from "../../video-scope";
 import { nextSequence, queueMetadata } from "../../videos";
 import type { JobPayloads } from "../queue";
 
@@ -29,6 +32,7 @@ export async function scanWorkflow({ workflowId }: JobPayloads["scan_workflow"])
   }
 
   const now = new Date();
+  const { timeZone } = getSettings();
   const known = new Map(
     db.select().from(videos).where(eq(videos.workflowId, workflowId)).all().map((v) => [v.itemId, v]),
   );
@@ -40,8 +44,9 @@ export async function scanWorkflow({ workflowId }: JobPayloads["scan_workflow"])
     const previous = known.get(item.id);
 
     if (!previous) {
-      // On the first scan, existing videos are skipped unless the workflow asks for them.
-      const status = firstScan && !workflow.includeExisting ? "ignored" : "discovered";
+      const sourceCreatedAt = new Date(item.fileSystemInfo?.createdDateTime ?? item.createdDateTime);
+      const reason = skipReason(workflow, recordingDate({ name: item.name, sourceCreatedAt, createdAt: now }, timeZone), firstScan);
+      const status = reason ? "ignored" : "discovered";
       const inserted = db
         .insert(videos)
         .values({
@@ -53,13 +58,14 @@ export async function scanWorkflow({ workflowId }: JobPayloads["scan_workflow"])
           size,
           mimeType: item.file?.mimeType ?? null,
           eTag: item.eTag ?? null,
-          sourceCreatedAt: new Date(item.fileSystemInfo?.createdDateTime ?? item.createdDateTime),
+          sourceCreatedAt,
           sourceModifiedAt: modifiedAt,
           durationMs: item.video?.duration ?? null,
           lastSeenSize: size,
           stableSince: modifiedAt,
           status,
-          error: status === "ignored" ? "Ya estaba en la carpeta al crear el workflow" : null,
+          ignoredReason: reason,
+          error: reason ? ignoreMessage(reason, workflow, timeZone) : null,
         })
         .returning({ id: videos.id })
         .get();
@@ -89,7 +95,7 @@ export async function scanWorkflow({ workflowId }: JobPayloads["scan_workflow"])
   for (const video of known.values()) {
     if ((video.status === "discovered" || video.status === "pending_review") && !present.has(video.itemId)) {
       db.update(videos)
-        .set({ status: "ignored", error: "Ya no está en la carpeta de OneDrive" })
+        .set({ status: "ignored", ignoredReason: "missing", error: ignoreMessage("missing", workflow, timeZone) })
         .where(eq(videos.id, video.id))
         .run();
       logEvent({ videoId: video.id, workflowId }, "Ya no está en la carpeta de OneDrive; se ignora", "warn");

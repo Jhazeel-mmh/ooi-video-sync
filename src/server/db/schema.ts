@@ -54,8 +54,10 @@ export const workflows = sqliteTable("workflows", {
   folderId: text().notNull(),
   folderPath: text().notNull(),
   recursive: integer({ mode: "boolean" }).notNull().default(false),
-  /** When false, videos already in the folder on the first scan are marked `ignored`. */
+  /** When false (and no `sinceDate`), videos already in the folder on the first scan are marked `ignored`. */
   includeExisting: integer({ mode: "boolean" }).notNull().default(false),
+  /** Only videos recorded on or after this instant are processed (start of day in the app time zone). */
+  sinceDate: integer({ mode: "timestamp_ms" }),
   youtubeAccountId: integer()
     .notNull()
     .references(() => accounts.id),
@@ -97,6 +99,10 @@ export type VideoStatus = (typeof VIDEO_STATUSES)[number];
 
 export const TITLE_SOURCES = ["template", "ai", "manual"] as const;
 
+/** Why a video is `ignored`; only the automatic reasons are re-evaluated when the workflow changes. */
+export const IGNORE_REASONS = ["existing", "before_since", "missing", "manual"] as const;
+export type IgnoreReason = (typeof IGNORE_REASONS)[number];
+
 export const videos = sqliteTable(
   "videos",
   {
@@ -119,6 +125,7 @@ export const videos = sqliteTable(
     /** Last time the file changed; the file is considered stable `stableMinutes` after this. */
     stableSince: integer({ mode: "timestamp_ms" }).notNull(),
     status: text({ enum: VIDEO_STATUSES }).notNull().default("discovered"),
+    ignoredReason: text({ enum: IGNORE_REASONS }),
     sequence: integer(),
     title: text(),
     description: text(),

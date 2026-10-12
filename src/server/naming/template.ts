@@ -59,6 +59,14 @@ export function dateFromFilename(name: string, timeZone: string): Date | null {
   return new Date(date.getTime());
 }
 
+/** Recording date: from the file name when it has one, else the file's creation date. */
+export function recordingDate(
+  file: { name: string; sourceCreatedAt: Date | null; createdAt: Date },
+  timeZone: string,
+): Date {
+  return dateFromFilename(file.name, timeZone) ?? file.sourceCreatedAt ?? file.createdAt;
+}
+
 export function formatDuration(ms: number | null | undefined): string {
   if (!ms || ms <= 0) return "";
   const total = Math.round(ms / 1000);

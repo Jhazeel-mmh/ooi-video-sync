@@ -8,10 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { timeAgo } from "@/lib/format";
+import { formatDate, timeAgo } from "@/lib/format";
 import { getDb } from "@/server/db/client";
 import { accounts, videos, workflows } from "@/server/db/schema";
 import { requireAdmin } from "@/server/session";
+import { getSettings } from "@/server/settings";
 import { deleteWorkflow, scanWorkflowNow, setWorkflowEnabled } from "./actions";
 
 export default function WorkflowsPage() {
@@ -39,6 +40,7 @@ async function WorkflowList() {
   await requireAdmin();
   const db = getDb();
   const rows = db.select().from(workflows).orderBy(asc(workflows.name)).all();
+  const { timeZone } = getSettings();
   const accountNames = new Map(db.select().from(accounts).all().map((a) => [a.id, a]));
   const counts = db
     .select({ workflowId: videos.workflowId, status: videos.status, total: count() })
@@ -92,7 +94,10 @@ async function WorkflowList() {
                 </TableCell>
                 <TableCell className="max-w-56">
                   <div className="truncate">{wf.folderPath}</div>
-                  <div className="truncate text-xs text-muted-foreground">{onedrive?.displayName}</div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {onedrive?.displayName}
+                    {wf.sinceDate && ` · grabados desde ${formatDate(wf.sinceDate, timeZone)}`}
+                  </div>
                 </TableCell>
                 <TableCell className="max-w-48 truncate">{youtube?.displayName}</TableCell>
                 <TableCell>

@@ -8,7 +8,7 @@ import { errorMessage } from "../errors";
 import { getSettings } from "../settings";
 import { generateWithAi } from "./ai";
 import { parseTags, sanitizeDescription, sanitizeTags, sanitizeTitle } from "./sanitize";
-import { dateFromFilename, formatDuration, renderTemplate, type TemplateVars } from "./template";
+import { formatDuration, recordingDate, renderTemplate, type TemplateVars } from "./template";
 
 export type GeneratedMetadata = {
   title: string;
@@ -18,10 +18,6 @@ export type GeneratedMetadata = {
   /** Set when AI was requested but the template had to be used. */
   aiError?: string;
 };
-
-export function recordingDate(video: Video, timeZone: string): Date {
-  return dateFromFilename(video.name, timeZone) ?? video.sourceCreatedAt ?? video.createdAt;
-}
 
 export function templateVars(video: Video, timeZone: string): TemplateVars {
   return {

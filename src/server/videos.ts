@@ -1,6 +1,6 @@
 import { and, eq, inArray, like, or, sql } from "drizzle-orm";
 import { getDb } from "./db/client";
-import { videos, workflows, type Video, type VideoStatus, type Workflow } from "./db/schema";
+import { videos, workflows, type IgnoreReason, type Video, type VideoStatus, type Workflow } from "./db/schema";
 import { logEvent } from "./events";
 import { cancelVideoJobs, enqueue } from "./jobs/queue";
 import { sanitizeTitle } from "./naming/sanitize";
@@ -108,15 +108,15 @@ export function canIgnore(video: Video): boolean {
   return !video.youtubeVideoId && !BUSY_STATUSES.includes(video.status) && video.status !== "ignored";
 }
 
-export function ignoreVideo(video: Video): void {
+export function ignoreVideo(video: Video, reason: IgnoreReason = "manual", message: string | null = null): void {
   cancelVideoJobs(video.id, ["generate_metadata", "transfer_video"]);
-  setVideoStatus(video.id, "ignored", { error: null });
+  setVideoStatus(video.id, "ignored", { ignoredReason: reason, error: message });
 }
 
 /** Brings an ignored video back into the pipeline (it gets named again). */
 export function restoreVideo(video: Video): void {
   if (video.sequence === null) updateVideo(video.id, { sequence: nextSequence(video.workflowId) });
-  setVideoStatus(video.id, "discovered", { error: null });
+  setVideoStatus(video.id, "discovered", { ignoredReason: null, error: null });
   queueMetadata(video.id);
 }
 

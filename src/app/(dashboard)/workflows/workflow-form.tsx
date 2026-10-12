@@ -27,7 +27,10 @@ export type WorkflowFormValues = {
   folderId: string;
   folderPath: string;
   recursive: boolean;
-  includeExisting: boolean;
+  /** Which videos to process: only new arrivals, everything, or recorded since `sinceDate`. */
+  videoScope: "new" | "all" | "since";
+  /** `yyyy-MM-dd` in the app time zone, or "". */
+  sinceDate: string;
   youtubeAccountId: number | null;
   mode: "auto" | "review";
   titleTemplate: string;
@@ -46,6 +49,12 @@ export type WorkflowFormValues = {
   pollIntervalMin: number;
   stableMinutes: number;
   counter: number;
+};
+
+const VIDEO_SCOPE_HINTS: Record<WorkflowFormValues["videoScope"], string> = {
+  new: "Los videos que ya están en la carpeta al crear el workflow se ignoran.",
+  all: "También se procesan los videos que ya están en la carpeta.",
+  since: "Se procesan los grabados desde esa fecha, también los que ya están en la carpeta.",
 };
 
 const PRIVACY_LABELS: Record<PrivacyStatus, string> = {
@@ -151,7 +160,8 @@ export function WorkflowForm({
           "postUploadFolderPath",
           "enabled",
           "recursive",
-          "includeExisting",
+          "videoScope",
+          "sinceDate",
           "madeForKids",
           "useAi",
         ] as const
@@ -225,13 +235,34 @@ export function WorkflowForm({
             />
           </Field>
           <SwitchField label="Incluir subcarpetas" checked={values.recursive} onChange={(v) => set("recursive", v)} />
-          {workflowId === null && (
-            <SwitchField
-              label="Procesar los videos que ya están en la carpeta"
-              checked={values.includeExisting}
-              onChange={(v) => set("includeExisting", v)}
-              hint="Si está apagado, solo se procesan los videos que lleguen después de crear el workflow."
-            />
+          <Field
+            label="Qué videos procesar"
+            errors={errors.videoScope}
+            hint={
+              VIDEO_SCOPE_HINTS[values.videoScope] +
+              (workflowId !== null ? " Al guardar un cambio aquí se revisan de nuevo los videos que se ignoraron por esta regla." : "")
+            }
+          >
+            <Select value={values.videoScope} onValueChange={(v) => set("videoScope", v as WorkflowFormValues["videoScope"])}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="new">Solo los que lleguen a partir de ahora</SelectItem>
+                <SelectItem value="all">Todos los de la carpeta</SelectItem>
+                <SelectItem value="since">Los grabados desde una fecha</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          {values.videoScope === "since" && (
+            <Field
+              label="Grabados desde"
+              htmlFor="sinceDate"
+              errors={errors.sinceDate}
+              hint="Se toma la fecha del nombre del archivo (p. ej. VID_20260510_…) y, si no trae, la fecha de creación del archivo."
+            >
+              <Input id="sinceDate" type="date" value={values.sinceDate} onChange={(e) => set("sinceDate", e.target.value)} />
+            </Field>
           )}
           <Field
             label="Revisar cada (minutos)"

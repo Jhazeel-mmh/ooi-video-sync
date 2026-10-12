@@ -85,7 +85,7 @@ La base de datos y sus migraciones se crean solas en `DATA_DIR` (por defecto `./
 
 1. **Cuentas**: conecta OneDrive y el canal de YouTube. Si tienes varios canales, conecta cada uno y elige el canal en la pantalla de Google.
 2. **Workflows → Nuevo**: elige la carpeta de OneDrive y el canal, la privacidad, la categoría y la playlist, el modo y las plantillas. La vista previa muestra el resultado con un nombre de archivo de ejemplo.
-   - Por defecto se ignoran los videos que **ya estaban** en la carpeta; activa *Procesar los videos que ya están en la carpeta* si quieres subirlos también.
+   - *Qué videos procesar*: **solo los que lleguen a partir de ahora** (lo que ya estaba en la carpeta se ignora), **todos los de la carpeta** o **los grabados desde una fecha**. Si lo cambias en un workflow existente, se recuperan los videos que se habían ignorado por esa regla y ahora la cumplen; los que ignoraste a mano no se tocan.
    - *Después de subir* puede mover el archivo a otra carpeta de OneDrive.
 3. **Videos**: revisa, edita y aprueba. Las acciones en lote permiten aprobar, reintentar, regenerar el título, ignorar o restaurar. Si editas un video que ya está en YouTube, el cambio se sincroniza allá.
 

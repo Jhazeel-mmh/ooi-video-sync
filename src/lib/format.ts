@@ -17,3 +17,7 @@ export function timeAgo(date: Date | null | undefined): string {
 export function formatDateTime(date: Date, timeZone: string): string {
   return format(new TZDate(date.getTime(), timeZone), "d MMM yyyy, HH:mm", { locale: es });
 }
+
+export function formatDate(date: Date, timeZone: string): string {
+  return format(new TZDate(date.getTime(), timeZone), "dd/MM/yyyy");
+}

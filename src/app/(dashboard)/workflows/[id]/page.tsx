@@ -1,3 +1,5 @@
+import { TZDate } from "@date-fns/tz";
+import { format } from "date-fns";
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
@@ -30,6 +32,21 @@ async function EditWorkflow({ params }: { params: PageProps<"/workflows/[id]">["
     .get();
   if (!workflow) notFound();
 
-  const { id: workflowId, createdAt: _c, updatedAt: _u, lastScannedAt: _l, lastScanError: _e, ...initial } = workflow;
-  return <WorkflowForm workflowId={workflowId} initial={initial} {...workflowFormProps()} />;
+  const {
+    id: workflowId,
+    createdAt: _c,
+    updatedAt: _u,
+    lastScannedAt: _l,
+    lastScanError: _e,
+    includeExisting,
+    sinceDate,
+    ...rest
+  } = workflow;
+  const props = workflowFormProps();
+  const initial = {
+    ...rest,
+    videoScope: sinceDate ? ("since" as const) : includeExisting ? ("all" as const) : ("new" as const),
+    sinceDate: sinceDate ? format(new TZDate(sinceDate.getTime(), props.timeZone), "yyyy-MM-dd") : "",
+  };
+  return <WorkflowForm workflowId={workflowId} initial={initial} {...props} />;
 }

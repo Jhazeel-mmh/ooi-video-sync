@@ -29,6 +29,13 @@
       "when": 1791789321747,
       "tag": "0003_transcripcion",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791790170118,
+      "tag": "0004_avisos",
+      "breakpoints": true
     }
   ]
 }

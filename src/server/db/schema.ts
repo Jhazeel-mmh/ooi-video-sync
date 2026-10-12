@@ -161,6 +161,8 @@ export const videos = sqliteTable(
     error: text(),
     uploadedAt: integer({ mode: "timestamp_ms" }),
     publishedAt: integer({ mode: "timestamp_ms" }),
+    /** When the "new videos to review" notice covering this video was sent. */
+    reviewNotifiedAt: integer({ mode: "timestamp_ms" }),
     ...timestamps,
   },
   (t) => [

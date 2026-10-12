@@ -4,6 +4,7 @@ import { getDb } from "./db/client";
 import { accounts, workflows, type Account, type Provider } from "./db/schema";
 import { AuthError, errorMessage, PermanentError, RetryableError } from "./errors";
 import { logEvent } from "./events";
+import { appLink, escapeMarkdown, notifyInBackground } from "./notify";
 import { OAuthError, REAUTH_ERROR_CODES, refreshTokens, type TokenSet } from "./providers/oauth";
 
 /** Refresh a bit before the real expiry so long requests don't start with a dying token. */
@@ -71,6 +72,11 @@ export function markNeedsReauth(accountId: number, reason: string): void {
   for (const wf of affected) {
     logEvent({ workflowId: wf.id }, `Cuenta desconectada, workflow en pausa: ${reason}`, "error");
   }
+  const account = db.select({ name: accounts.displayName }).from(accounts).where(eq(accounts.id, accountId)).get();
+  notifyInBackground(
+    `⚠️ La cuenta «${escapeMarkdown(account?.name ?? String(accountId))}» necesita reconectarse; sus workflows están en pausa.\n` +
+      appLink("/accounts"),
+  );
 }
 
 export function upsertAccount(input: {

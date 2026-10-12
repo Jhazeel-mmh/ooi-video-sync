@@ -2,6 +2,7 @@ import { formatDateTime } from "../../lib/format";
 import type { Job, JobType } from "../db/schema";
 import { AuthError, PermanentError, QuotaError, RescheduleSignal, RetryableError, errorMessage } from "../errors";
 import { logEvent } from "../events";
+import { appLink, escapeMarkdown, notifyInBackground } from "../notify";
 import { getSettings } from "../settings";
 import { loadVideo, setVideoStatus, updateVideo } from "../videos";
 import { checkProcessing } from "./handlers/check-processing";
@@ -105,4 +106,8 @@ function onVideoJobFailure(type: JobType, videoId: number, message: string, will
 
   setVideoStatus(videoId, "failed", { error: message });
   logEvent({ videoId }, message, "error");
+  notifyInBackground(
+    `❌ No se pudo procesar **${escapeMarkdown(loaded.video.title ?? loaded.video.name)}**: ${escapeMarkdown(message)}\n` +
+      appLink(`/videos/${videoId}`),
+  );
 }

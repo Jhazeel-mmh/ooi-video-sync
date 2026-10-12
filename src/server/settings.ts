@@ -25,6 +25,8 @@ export const settingsSchema = z.object({
   transcriptMaxMinutes: z.coerce.number().int().min(0).default(0),
   timeZone: z.string().min(1).default(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
   regionCode: z.string().length(2).default("US"),
+  /** Discord channel webhook for notices; empty = off. */
+  discordWebhookUrl: z.string().default(""),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;

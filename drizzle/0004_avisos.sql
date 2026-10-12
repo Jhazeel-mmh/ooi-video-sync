@@ -1,0 +1,1 @@
+ALTER TABLE `videos` ADD `review_notified_at` integer;

@@ -1,5 +1,6 @@
 import { PermanentError, RescheduleSignal } from "../../errors";
 import { logEvent } from "../../events";
+import { escapeMarkdown, notifyDiscord } from "../../notify";
 import { getVideo } from "../../providers/youtube";
 import { loadVideo, setVideoStatus } from "../../videos";
 import type { JobPayloads } from "../queue";
@@ -21,6 +22,10 @@ export async function checkProcessing({ videoId, checks = 0 }: JobPayloads["chec
     setVideoStatus(videoId, "published", { publishedAt: new Date(), error: null });
     const privacy = remote.status?.privacyStatus;
     logEvent({ videoId }, `Listo en YouTube (${privacy ? PRIVACY_LABELS[privacy] : "procesado"})`);
+    await notifyDiscord(
+      `✅ Publicado en YouTube${privacy ? ` (${PRIVACY_LABELS[privacy]})` : ""}: **${escapeMarkdown(video.title ?? video.name)}**\n` +
+        `https://youtu.be/${video.youtubeVideoId}`,
+    );
     const requested = video.publishAt ? "private" : (video.privacyStatus ?? workflow.privacyStatus);
     if (privacy && privacy !== requested) {
       logEvent(

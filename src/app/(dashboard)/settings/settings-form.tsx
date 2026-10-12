@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Settings } from "@/server/settings";
-import { saveSettings } from "./actions";
+import { saveSettings, sendTestNotice } from "./actions";
 
 const PROVIDER_LABELS: Record<Settings["aiProvider"], string> = {
   auto: "Automático: Claude si hay API key, si no Gemini",
@@ -34,6 +34,15 @@ export function SettingsForm({ initial, timeZones, ai }: { initial: Settings; ti
   const [model, setModel] = useState(initial.aiModel);
   const [geminiModel, setGeminiModel] = useState(initial.geminiModel);
   const [pending, startTransition] = useTransition();
+  const [webhook, setWebhook] = useState(initial.discordWebhookUrl);
+  const [testing, startTest] = useTransition();
+
+  const sendTest = () =>
+    startTest(async () => {
+      const result = await sendTestNotice(webhook);
+      if (result.ok) toast.success(result.message);
+      else toast.error(result.error);
+    });
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -125,6 +134,33 @@ export function SettingsForm({ initial, timeZones, ai }: { initial: Settings; ti
           <Field label="País para categorías" htmlFor="regionCode" hint="Código de 2 letras, p. ej. MX, US, ES.">
             <Input id="regionCode" name="regionCode" defaultValue={initial.regionCode} maxLength={2} />
           </Field>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Avisos a Discord</CardTitle>
+          <CardDescription>
+            Un mensaje cuando un video se publica o falla, cuando una cuenta necesita reconectarse, y uno agrupado
+            (como máximo cada 30 minutos por workflow) cuando hay videos nuevos por revisar. En Discord: Ajustes del
+            canal → Integraciones → Webhooks → Nuevo webhook → Copiar URL.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-end gap-2">
+          <div className="min-w-72 flex-1">
+            <Field label="URL del webhook" htmlFor="discordWebhookUrl" hint="Vacío = sin avisos.">
+              <Input
+                id="discordWebhookUrl"
+                name="discordWebhookUrl"
+                placeholder="https://discord.com/api/webhooks/…"
+                value={webhook}
+                onChange={(e) => setWebhook(e.target.value)}
+              />
+            </Field>
+          </div>
+          <Button type="button" variant="outline" disabled={!webhook || testing} onClick={sendTest} className="mb-6">
+            {testing ? "Enviando…" : "Enviar prueba"}
+          </Button>
         </CardContent>
       </Card>
 

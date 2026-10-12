@@ -7,6 +7,7 @@ import { errorMessage } from "../server/errors";
 import { claimNext, heartbeat, pruneJobs, releaseStaleJobs, resetRunningJobs } from "../server/jobs/queue";
 import { runJob } from "../server/jobs/runner";
 import { enqueueDueScans } from "../server/jobs/scheduler";
+import { notifyPendingReviews } from "../server/notify";
 import { getSettings, recordWorkerHeartbeat } from "../server/settings";
 
 const WORKER_ID = `${hostname()}:${process.pid}`;
@@ -60,6 +61,7 @@ function schedulerTick() {
     const released = releaseStaleJobs(STALE_AFTER_MS);
     if (released > 0) log(`${released} job(s) sin latido devueltos a la cola`);
     pruneJobs();
+    notifyPendingReviews().catch((error) => log(`Error al enviar avisos: ${errorMessage(error)}`));
   } catch (error) {
     log(`Error en el planificador: ${errorMessage(error)}`);
   }

@@ -1,5 +1,6 @@
 import "server-only";
 import { getIronSession, type SessionOptions } from "iron-session";
+import { io } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { env, isSecureOrigin } from "./env";
@@ -20,7 +21,11 @@ function sessionOptions(): SessionOptions {
 }
 
 export async function getSession() {
-  return getIronSession<SessionData>(await cookies(), sessionOptions());
+  const jar = await cookies();
+  // iron-session checks expiry with Date.now(), and callers go on to read the
+  // (synchronous) SQLite database: keep all of that out of prerendering.
+  await io();
+  return getIronSession<SessionData>(jar, sessionOptions());
 }
 
 /** Data access guard: every server action, route handler and data read calls this. */
